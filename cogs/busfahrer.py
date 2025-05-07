@@ -350,7 +350,7 @@ class BusfahrerEndgame:
         self.max_steps = 5
         self.top_cards = self.generate_top_cards()
         self.bottom_card = None
-        self.file_path = "busfahrer_scores.json"
+        self.file_path = "save_data/busfahrer_scores.json"
         self.drawn_cards = []
         self.highest_step = 0  # höchste geschaffte Ebene
         self.status_message = ""
