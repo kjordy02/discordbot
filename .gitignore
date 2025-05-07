@@ -5,6 +5,7 @@ __pycache__/
 
 #Save data
 save_data/*
+config.py
 
 # C extensions
 *.so

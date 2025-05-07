@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 from logger import get_logger
+from config import DISCORDBOT_TOKEN
 
 log = get_logger(__name__)
 
@@ -28,7 +29,7 @@ async def load_extensions():
 async def main():
     async with bot:
         await load_extensions()
-        await bot.start("NTM0NDY0NjIyNDUxNzUyOTcw.GuQX8M.DA4Cn8U7_eFdzpbTEyY6emi9F7ocO1OrGTFiEU")
+        await bot.start(DISCORDBOT_TOKEN)
 
 import asyncio
 asyncio.run(main())

@@ -3,10 +3,9 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 from logger import get_logger
+from config import STEAM_API_KEY
 
 log = get_logger(__name__)
-
-STEAM_API_KEY = "B80663F3408AA1652D65816DC05AD8F3"  # <-- Trage hier deinen API Key ein
 
 class Steam(commands.GroupCog, name="steam"):
     def __init__(self, bot):
