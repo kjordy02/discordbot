@@ -2,6 +2,9 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import subprocess
+from logger import get_logger
+
+log = get_logger(__name__)
 
 ADMIN_ID = 460490189408829441
 
@@ -11,7 +14,7 @@ class Admin(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Admin Modul geladen")
+        log.info("Admin Modul geladen")
 
     @app_commands.command(name="sync", description="Synchronisiert die Slash Commands.")
     async def sync(self, interaction: discord.Interaction):

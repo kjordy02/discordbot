@@ -1,6 +1,9 @@
 import discord
 from discord.ext import commands
 import os
+from logger import get_logger
+
+log = get_logger(__name__)
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -11,11 +14,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"Bot ist bereit → {bot.user}")
+    log.info(f"Bot ist bereit → {bot.user}")
 
     for guild in bot.guilds:
         await bot.tree.sync(guild=guild)
-        print(f"Slash Commands für {guild.name} synchronisiert!")
+        log.info(f"Slash Commands für {guild.name} synchronisiert!")
 
 async def load_extensions():
     for filename in os.listdir("./cogs"):

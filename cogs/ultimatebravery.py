@@ -3,6 +3,9 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 import random
+from logger import get_logger
+
+log = get_logger(__name__)
 
 VERSION = "14.9.1"
 BASE_URL = f"http://ddragon.leagueoflegends.com/cdn/{VERSION}/data/en_US"
@@ -69,7 +72,7 @@ class UltimateBravery(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Ultimate Bravery Modul geladen")
+        log.info("Ultimate Bravery Modul geladen")
 
     async def fetch_json(self, session, url):
         async with session.get(url) as response:

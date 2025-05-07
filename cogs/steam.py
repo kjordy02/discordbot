@@ -2,16 +2,19 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
+from logger import get_logger
+
+log = get_logger(__name__)
 
 STEAM_API_KEY = "B80663F3408AA1652D65816DC05AD8F3"  # <-- Trage hier deinen API Key ein
 
-class Steam(commands.Cog):
+class Steam(commands.GroupCog, name="steam"):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Steam Modul geladen")
+        log.info("Steam Modul geladen")
 
     async def get_steamid(self, identifier):
         # Prüfen ob es eine SteamID64 ist
@@ -27,7 +30,7 @@ class Steam(commands.Cog):
                     return data["response"]["steamid"]
                 return None
 
-    @app_commands.command(name="steamprofile", description="Zeigt das Steam Profil eines Spielers.")
+    @app_commands.command(name="profile", description="Zeigt das Steam Profil eines Spielers.")
     async def steamprofile(self, interaction: discord.Interaction, steamid: str):
         await interaction.response.defer()
 
@@ -51,7 +54,7 @@ class Steam(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="steamrecent", description="Zeigt die zuletzt gespielten Spiele eines Spielers.")
+    @app_commands.command(name="recent", description="Zeigt die zuletzt gespielten Spiele eines Spielers.")
     async def steamrecent(self, interaction: discord.Interaction, steamid: str):
         await interaction.response.defer()
 
@@ -77,7 +80,7 @@ class Steam(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="steamgame", description="Zeigt die Spielzeit für ein bestimmtes Spiel eines Spielers.")
+    @app_commands.command(name="gametime", description="Zeigt die Spielzeit für ein bestimmtes Spiel eines Spielers.")
     async def steamgame(self, interaction: discord.Interaction, steamid: str, spielname: str):
         await interaction.response.defer()
 
@@ -107,7 +110,7 @@ class Steam(commands.Cog):
         embed = discord.Embed(title=found["name"], description=f"Gesamtspielzeit: {hours} Stunden", color=discord.Color.purple())
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="steamcommon", description="Zeigt Spiele, die alle angegebenen Steam Accounts besitzen.")
+    @app_commands.command(name="common", description="Zeigt Spiele, die alle angegebenen Steam Accounts besitzen.")
     async def steamcommon(self, interaction: discord.Interaction, steamids: str):
         await interaction.response.defer()
 
@@ -146,5 +149,4 @@ class Steam(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 async def setup(bot):
-    cog = Steam(bot)
-    await bot.add_cog(cog)
+    await bot.add_cog(Steam(bot))

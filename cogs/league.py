@@ -3,6 +3,9 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 from urllib.parse import quote
+from logger import get_logger
+
+log = get_logger(__name__)
 
 VERSION = "14.9.1"
 RIOT_API_KEY = "RGAPI-9e84f730-250c-4f09-86ad-37d53961a285"
@@ -23,7 +26,7 @@ class League(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("League Modul geladen")
+        log.info("League Modul geladen")
 
     @app_commands.command(name="lolstats", description="Zeigt League of Legends Stats anhand von Riot ID oder Summoner Name")
     async def lolstats(self, interaction: discord.Interaction, summoner_name: str):
