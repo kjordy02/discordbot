@@ -5,6 +5,8 @@ import random
 import json
 import os
 from logger import get_logger
+from config import SAVE_FOLDER
+from datetime import datetime
 
 log = get_logger(__name__)
 
@@ -16,6 +18,7 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
     @commands.Cog.listener()
     async def on_ready(self):
         log.info("Busfahrer Modul geladen")
+
 
     class GameSession:
         def __init__(self, host):
@@ -52,18 +55,7 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
         if "♠️" in card: return "Pik"
         if "♣️" in card: return "Kreuz"
 
-    @app_commands.command(name="rangliste", description="Zeigt die Busfahrer-Rangliste")
-    async def rangliste(self, interaction: discord.Interaction):
-        with open("busfahrer_scores.json", "r") as f:
-            data = json.load(f)
-
-        sorted_data = sorted(data, key=lambda x: (x["sips"], x["trys"]))
-
-        msg = "\n".join([f"<@{entry['id']}> - {entry['sips']} Schlücke / {entry['trys']} Versuche" for entry in sorted_data])
-
-        await interaction.response.send_message(f"**Busfahrer-Rangliste:**\n{msg}")
-
-    @app_commands.command(name="2", description="Starte Busfahrer 2.0")
+    @app_commands.command(name="v2", description="Starte Busfahrer 2.0")
     async def start_busfahrer(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
         if guild_id in self.sessions:
@@ -77,6 +69,19 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
         embed = discord.Embed(title="Busfahrer Lobby", description="Spieler:\n*(niemand)*", color=discord.Color.orange())
         await interaction.response.send_message(embed=embed, view=view)
         session.game_message = await interaction.original_response()
+    
+    @app_commands.command(name="rangliste", description="Zeige die Busfahrer Gesamtrangliste")
+    async def rangliste(self, interaction: discord.Interaction):
+        rankings = Rankings(self.bot, interaction.guild.id)
+        ranking_text = rankings.get_ranking(daily=False)
+        await interaction.response.send_message(f"**Busfahrer Gesamtrangliste:**\n\n{ranking_text}")
+
+    @app_commands.command(name="tagesrangliste", description="Zeige die Busfahrer Tagesrangliste")
+    async def tagesrangliste(self, interaction: discord.Interaction):
+        rankings = Rankings(self.bot, interaction.guild.id)
+        ranking_text = rankings.get_ranking(daily=True)
+        await interaction.response.send_message(f"**Busfahrer Tagesrangliste:**\n\n{ranking_text}")
+
 
     async def update_lobby(self, guild_id):
         session = self.sessions[guild_id]
@@ -112,7 +117,7 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
         player = session.players[session.current_player_index]
         session.results[player.id] = ""
         embed = self.build_embed(session, player)
-        view = GameView(self, guild_id, player, session.round, awaiting_answer=True)
+        view = GameView(self, guild_id, player, session.round, awaiting_answer=True, channel=channel)
 
         if session.game_message is None:
             session.game_message = await channel.send(embed=embed, view=view)
@@ -205,7 +210,7 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
         session.awaiting_continue = True
 
         embed = self.build_embed(session, player)
-        view = GameView(self, guild_id, player, session.round, awaiting_answer=False)
+        view = GameView(self, guild_id, player, session.round, awaiting_answer=False, channel=interaction.channel)
 
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -284,13 +289,16 @@ class LobbyView(discord.ui.View):
         await self.cog.start_game(self.guild_id, interaction.channel)
 
 class GameView(discord.ui.View):
-    def __init__(self, cog, guild_id, player, round_num, awaiting_answer):
-        super().__init__(timeout=None)
+    def __init__(self, cog, guild_id, player, round_num, awaiting_answer, channel):
+        timeout = 5 if not awaiting_answer else None
+        super().__init__(timeout=timeout)
         self.cog = cog
         self.guild_id = guild_id
         self.player = player
         self.round = round_num
         self.awaiting_answer = awaiting_answer
+        self.next_button = None
+        self.channel = channel
 
         if awaiting_answer:
             options = []
@@ -306,7 +314,14 @@ class GameView(discord.ui.View):
             for value, emoji, text in options:
                 self.add_item(GameButton(value, emoji, text, self))
         else:
-            self.add_item(NextButton(self))
+            next_button = NextButton(self)
+            self.next_button = next_button
+            self.add_item(next_button)
+        
+    async def on_timeout(self):
+        # Wird automatisch nach timeout ausgeführt
+        if self.next_button:
+            await self.next_button.auto_continue()
 
 class GameButton(discord.ui.Button):
     def __init__(self, label, emoji, text_label, view):
@@ -330,12 +345,21 @@ class NextButton(discord.ui.Button):
             await interaction.response.send_message("Nur der aktuelle Spieler kann weiterklicken.", ephemeral=True)
             return
         await interaction.response.defer()
+
+        self.view_ref.stop()  # WICHTIG → damit der Timer nicht mehr feuert
+        
+        await self.continue_game(interaction.channel)
+
+    async def auto_continue(self):
+        # Auto Continue wird von on_timeout aufgerufen
+        await self.continue_game(self.view_ref.channel)
+
+    async def continue_game(self, channel):
         session = self.view_ref.cog.sessions[self.view_ref.guild_id]
         session.current_player_index += 1
-        await self.view_ref.cog.next_turn(self.view_ref.guild_id, interaction.channel)
+        await self.view_ref.cog.next_turn(self.view_ref.guild_id, channel)
 
-
-
+### ENDGAME
 class BusfahrerEndgame:
     def __init__(self, cog, channel, player, message):
         self.cog = cog
@@ -350,7 +374,7 @@ class BusfahrerEndgame:
         self.max_steps = 5
         self.top_cards = self.generate_top_cards()
         self.bottom_card = None
-        self.file_path = "save_data/busfahrer_scores.json"
+        self.file_path = "./save_data/busfahrer_scores.json"
         self.drawn_cards = []
         self.highest_step = 0  # höchste geschaffte Ebene
         self.status_message = ""
@@ -395,7 +419,11 @@ class BusfahrerEndgame:
 
         if self.current_step >= self.max_steps:
             embed.description += "\n\n🎉 **Du hast es geschafft!**"
-            await self.save_score()
+
+            # SCORE SPEICHERN
+            rankings = Rankings(self.cog.bot, self.channel.guild.id)
+            rankings.add_result(self.player.id, tries=self.tries, sips=self.sips)
+
             view = None
             del self.cog.sessions[self.channel.guild.id]
             
@@ -433,9 +461,10 @@ class BusfahrerEndgame:
         elif guess == "tiefer":
             correct = new_value < prev_value
 
+        self.drawn_cards.append(self.bottom_card)
+
         if correct:
             self.current_step += 1
-            self.drawn_cards.append(self.bottom_card)
 
             if self.current_step > self.highest_step:
                 self.highest_step = self.current_step
@@ -449,7 +478,6 @@ class BusfahrerEndgame:
 
             self.current_step = 0
             self.tries += 1
-            self.drawn_cards = []
 
             await self.send_embed() 
             return
@@ -523,6 +551,68 @@ class BusfahrerGameView(discord.ui.View):
         await interaction.response.defer()
         await self.game.handle_guess(interaction, "tiefer")
 
+
+### RANKINGS
+class Rankings:
+    def __init__(self, bot, guild_id):
+        self.bot = bot
+        os.makedirs(SAVE_FOLDER, exist_ok=True)
+
+        self.total_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busfahrer_scores.json")
+        self.daily_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busfahrer_daily.json")
+
+    def _load(self, filename):
+        if not os.path.exists(filename):
+            return {}
+        with open(filename, "r") as f:
+            return json.load(f)
+
+    def _save(self, filename, data):
+        with open(filename, "w") as f:
+            json.dump(data, f)
+
+    def _reset_daily_if_needed(self):
+        now = datetime.now()
+        if now.hour >= 12:
+            if not os.path.exists(self.daily_file):
+                return
+            mtime = datetime.fromtimestamp(os.path.getmtime(self.daily_file))
+            if mtime.date() != now.date():
+                self._save(self.daily_file, {})  # Reset
+
+    def add_result(self, user_id, tries, sips):
+        user_id = str(user_id)
+
+        self._reset_daily_if_needed()
+
+        # Gesamt
+        total = self._load(self.total_file)
+        if user_id not in total:
+            total[user_id] = {"tries": 0, "sips": 0}
+        total[user_id]["tries"] += tries
+        total[user_id]["sips"] += sips
+        self._save(self.total_file, total)
+
+        # Tagesliste
+        daily = self._load(self.daily_file)
+        if user_id not in daily:
+            daily[user_id] = {"tries": 0, "sips": 0}
+        daily[user_id]["tries"] += tries
+        daily[user_id]["sips"] += sips
+        self._save(self.daily_file, daily)
+
+    def get_ranking(self, daily=False, limit=10):
+        filename = self.daily_file if daily else self.total_file
+        data = self._load(filename)
+
+        sorted_data = sorted(data.items(), key=lambda x: (-x[1]["sips"], x[1]["tries"]))
+
+        result = []
+        for i, (user_id, stats) in enumerate(sorted_data[:limit], 1):
+            user = self.bot.get_user(int(user_id))
+            name = user.display_name if user else f"User {user_id}"
+            result.append(f"{i}. {name} - {stats['sips']} Schlücke, {stats['tries']} Versuche")
+        return "\n".join(result) if result else "Noch keine Einträge."
 
 async def setup(bot):
     await bot.add_cog(Busfahrer(bot))
