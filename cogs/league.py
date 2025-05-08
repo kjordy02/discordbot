@@ -26,9 +26,9 @@ class League(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        log.info("League Modul geladen")
+        log.info("League module loaded")
 
-    @app_commands.command(name="lolstats", description="Zeigt League of Legends Stats anhand von Riot ID oder Summoner Name")
+    @app_commands.command(name="lolstats", description="Shows League of Legends stats based on Riot ID or Summoner Name")
     async def lolstats(self, interaction: discord.Interaction, summoner_name: str):
         await interaction.response.defer()
 
@@ -40,13 +40,13 @@ class League(commands.Cog):
                 try:
                     game_name, tag_line = summoner_name.split("#")
                 except ValueError:
-                    await interaction.followup.send("Ungültiges Format. Nutze z.B. Jordy#EUW.")
+                    await interaction.followup.send("Invalid format. Use for example Gragas#EUW.")
                     return
 
                 url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{quote(game_name)}/{quote(tag_line)}?api_key={RIOT_API_KEY}"
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        await interaction.followup.send("Riot ID nicht gefunden oder ungültig.")
+                        await interaction.followup.send("Riot ID not found or invalid.")
                         return
                     account_data = await resp.json()
                     puuid = account_data["puuid"]
@@ -58,14 +58,14 @@ class League(commands.Cog):
 
             async with session.get(summoner_url) as resp:
                 if resp.status != 200:
-                    await interaction.followup.send("Summoner nicht gefunden.")
+                    await interaction.followup.send("Summoner not found.")
                     return
                 summoner_data = await resp.json()
 
             summoner_id = summoner_data["id"]
             puuid = summoner_data["puuid"]
             summoner_name = summoner_data.get("name", summoner_name)
-            level = summoner_data.get("summonerLevel", "Unbekannt")
+            level = summoner_data.get("summonerLevel", "Unknown")
 
             ranked_url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}?api_key={RIOT_API_KEY}"
             async with session.get(ranked_url) as resp:
@@ -90,19 +90,19 @@ class League(commands.Cog):
                 champ_id = champ['championId']
                 champ_points = champ['championPoints']
                 champ_name = self.champion_mapping.get(champ_id, f"Champion {champ_id}")
-                top_champions.append(f"{champ_name}: {champ_points} Punkte")
+                top_champions.append(f"{champ_name}: {champ_points} points")
 
             live_url = f"https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{summoner_id}?api_key={RIOT_API_KEY}"
             async with session.get(live_url) as resp:
-                live_status = "**Aktuell nicht im Spiel.**"
+                live_status = "**Currently not in a game.**"
                 if resp.status == 200:
                     live_game = await resp.json()
-                    game_mode = live_game.get("gameMode", "Unbekannt")
-                    live_status = f"**Aktuell im Spiel → Modus: {game_mode}**"
+                    game_mode = live_game.get("gameMode", "Unknown")
+                    live_status = f"**Currently in a game → Mode: {game_mode}**"
 
             embed = discord.Embed(title=f"{summoner_name} → Level {level}", color=discord.Color.blue())
-            embed.add_field(name="Rang", value=ranked_text, inline=False)
-            embed.add_field(name="Champion Punkte Gesamt", value=f"{mastery_score} Punkte", inline=False)
+            embed.add_field(name="Rank", value=ranked_text, inline=False)
+            embed.add_field(name="Total Champion Points", value=f"{mastery_score} points", inline=False)
             embed.add_field(name="Top Champions", value="\n".join(top_champions), inline=False)
             embed.add_field(name="Live Status", value=live_status, inline=False)
 

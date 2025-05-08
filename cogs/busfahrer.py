@@ -10,15 +10,14 @@ from datetime import datetime
 
 log = get_logger(__name__)
 
-class Busfahrer(commands.GroupCog, name="busfahrer"):
+class Busdriver(commands.GroupCog, name="busdriver"):
     def __init__(self, bot):
         self.bot = bot
         self.sessions = {}
 
     @commands.Cog.listener()
     async def on_ready(self):
-        log.info("Busfahrer Modul geladen")
-
+        log.info("Busdriver module loaded")
 
     class GameSession:
         def __init__(self, host):
@@ -28,7 +27,7 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
             self.deck = []
             self.round = 1
             self.current_player_index = 0
-            self.cards = {}  # user_id -> list of drawn cards
+            self.cards = {}
             self.points = {}
             self.results = {}
             self.game_message = None
@@ -47,47 +46,46 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
         return order.index(value)
 
     def card_color(self, card):
-        return "rot" if "❤️" in card or "♦️" in card else "schwarz"
+        return "red" if "❤️" in card or "♦️" in card else "black"
 
     def card_suit(self, card):
-        if "❤️" in card: return "Herz"
-        if "♦️" in card: return "Karo"
-        if "♠️" in card: return "Pik"
-        if "♣️" in card: return "Kreuz"
+        if "❤️" in card: return "hearts"
+        if "♦️" in card: return "diamonds"
+        if "♠️" in card: return "spades"
+        if "♣️" in card: return "clubs"
 
-    @app_commands.command(name="v2", description="Starte Busfahrer 2.0")
-    async def start_busfahrer(self, interaction: discord.Interaction):
+    @app_commands.command(name="v2", description="Start Busdriver 2.0")
+    async def start_busdriver(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
         if guild_id in self.sessions:
-            await interaction.response.send_message("Es läuft bereits eine Runde!", ephemeral=True)
+            await interaction.response.send_message("A game is already running!", ephemeral=True)
             return
 
         session = self.GameSession(interaction.user)
         self.sessions[guild_id] = session
         view = LobbyView(self, guild_id)
 
-        embed = discord.Embed(title="Busfahrer Lobby", description="Spieler:\n*(niemand)*", color=discord.Color.orange())
+        embed = discord.Embed(title="Busdriver Lobby", description="Players:\n*(no one)*", color=discord.Color.orange())
         await interaction.response.send_message(embed=embed, view=view)
         session.game_message = await interaction.original_response()
-    
-    @app_commands.command(name="rangliste", description="Zeige die Busfahrer Gesamtrangliste")
+
+    @app_commands.command(name="rangliste", description="Show the overall Busdriver ranking")
     async def rangliste(self, interaction: discord.Interaction):
         rankings = Rankings(self.bot, interaction.guild.id)
         ranking_text = rankings.get_ranking(daily=False)
-        await interaction.response.send_message(f"**Busfahrer Gesamtrangliste:**\n\n{ranking_text}")
+        await interaction.response.send_message(f"**Overall Busdriver Ranking:**\n\n{ranking_text}")
 
-    @app_commands.command(name="tagesrangliste", description="Zeige die Busfahrer Tagesrangliste")
+    @app_commands.command(name="tagesrangliste", description="Show today's Busdriver ranking")
     async def tagesrangliste(self, interaction: discord.Interaction):
         rankings = Rankings(self.bot, interaction.guild.id)
         ranking_text = rankings.get_ranking(daily=True)
-        await interaction.response.send_message(f"**Busfahrer Tagesrangliste:**\n\n{ranking_text}")
-
+        await interaction.response.send_message(f"**Today's Busdriver Ranking:**\n\n{ranking_text}")
 
     async def update_lobby(self, guild_id):
         session = self.sessions[guild_id]
-        player_list = "\n".join([p.display_name for p in session.players]) or "*niemand*"
+        player_list = "\n".join([p.display_name for p in session.players]) or "*no one*"
 
-        embed = discord.Embed(title="Busfahrer Lobby", description=f"Spieler:\n{player_list}", color=discord.Color.orange())
+        embed = discord.Embed(title="Busdriver Lobby", description=f"Players:\n{player_list}", color=discord.Color.orange())
         await session.game_message.edit(embed=embed, view=LobbyView(self, guild_id))
 
     async def start_game(self, guild_id, channel):
@@ -126,27 +124,27 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
 
     def build_embed(self, session, player):
         embed = discord.Embed(
-            title="🚌 Busfahrer 2.0",
-            description=f"Aktueller Spieler: 🚌 **{player.display_name}**",
+            title="🚌 Busdriver 2.0",
+            description=f"Current player: 🚌 **{player.display_name}**",
             color=discord.Color.gold()
         )
 
         cards = session.cards.setdefault(player.id, [])
-        card_text = " ".join(cards) if cards else "*Keine*"
-        embed.add_field(name="Gezogene Karten", value=card_text, inline=False)
+        card_text = " ".join(cards) if cards else "*None*"
+        embed.add_field(name="Drawn cards", value=card_text, inline=False)
 
         points_text = "\n".join([
-            f"**🚌 {p.display_name}: {session.points[p.id]} Punkte**" if p == player else f"{p.display_name}: {session.points[p.id]} Punkte"
+            f"**🚌 {p.display_name}: {session.points[p.id]} points**" if p == player else f"{p.display_name}: {session.points[p.id]} points"
             for p in session.players
         ])
-        embed.add_field(name="Punkte", value=points_text, inline=False)
+        embed.add_field(name="Points", value=points_text, inline=False)
 
         result = session.results.get(player.id, "")
-        embed.add_field(name="Ergebnis", value=result or "Noch keine Antwort.", inline=False)
+        embed.add_field(name="Result", value=result or "No answer yet.", inline=False)
 
-        embed.set_footer(text=f"Runde {session.round}/4")
+        embed.set_footer(text=f"Round {session.round}/4")
         return embed
-
+    
     async def resolve_turn(self, guild_id, player, guess, interaction):
         session = self.sessions[guild_id]
         cards = session.cards.setdefault(player.id, [])
@@ -165,14 +163,14 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
             points = 10 if result else 0
         elif session.round == 2:
             if len(cards) < 2:
-                return await interaction.response.send_message("Keine Vergleichskarte!", ephemeral=True)
+                return await interaction.response.send_message("No comparison card available!", ephemeral=True)
             prev = self.card_value(cards[-2])
             cur = self.card_value(next_card)
             penalty = 2
-            if guess == "gleich":
+            if guess == "equal":
                 result = prev == cur
                 points = 20 if result else -10
-            elif guess == "höher":
+            elif guess == "higher":
                 result = cur > prev
                 points = 10 if result else 0
             else:
@@ -184,15 +182,14 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
             cur = self.card_value(next_card)
             penalty = 3
             if cur in vals:
-        # Gleich hat Vorrang!
-                result = guess == "gleich"
+                result = guess == "equal"
                 points = 20 if result else 0
             else:
-                if guess == "außerhalb":
+                if guess == "outside":
                     result = cur < min_val or cur > max_val
                     points = 10 if result else 0
-                elif guess == "innerhalb":
-                    result = min_val < cur < max_val  # Kein Gleich möglich!
+                elif guess == "inside":
+                    result = min_val < cur < max_val
                     points = 10 if result else 0
         elif session.round == 4:
             result = guess == self.card_suit(next_card)
@@ -202,9 +199,9 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
         session.points[player.id] += points
 
         if result:
-            drink_text = f"✅ Richtig! {'Verteile' if points > 0 else 'Keine Aktion.'} {penalty * 2 if (('gleich' in guess) or (session.round == 4)) else penalty} Schlücke."
+            drink_text = f"✅ Correct! {'Give' if points > 0 else 'No action.'} {penalty * 2 if (('equal' in guess) or (session.round == 4)) else penalty} sips."
         else:
-            drink_text = f"❌ Falsch! Trink {penalty * (2 if guess == 'gleich' else 1)} Schlücke."
+            drink_text = f"❌ Wrong! Drink {penalty * (2 if guess == 'equal' else 1)} sips."
 
         session.results[player.id] = drink_text
         session.awaiting_continue = True
@@ -218,39 +215,38 @@ class Busfahrer(commands.GroupCog, name="busfahrer"):
         losers = sorted(session.points.items(), key=lambda x: x[1])
         lowest = losers[0][1]
         candidates = [uid for uid, points in losers if points == lowest]
-        busfahrer = random.choice(candidates)
+        busdriver = random.choice(candidates)
 
-        busfahrer_user = discord.utils.get(channel.guild.members, id=busfahrer)
+        busdriver_user = discord.utils.get(channel.guild.members, id=busdriver)
 
         embed = discord.Embed(
-            title="🚍 Busfahrer gewählt!",
-            description=f"**{busfahrer_user.display_name} ist der Busfahrer und muss fahren!**\n\nDrücke unten, um die Fahrt zu starten.",
+            title="🚍 Busdriver chosen!",
+            description=f"**{busdriver_user.display_name} is the Busdriver and must drive!**\n\nPress below to start the ride.",
             color=discord.Color.red()
         )
 
-        view = BusfahrerStartView(self, channel, busfahrer_user)
+        view = BusdriverStartView(self, channel, busdriver_user)
 
         await session.game_message.edit(embed=embed, view=view)
 
 ### Views and Buttons
 
-class BusfahrerStartView(discord.ui.View):
+class BusdriverStartView(discord.ui.View):
     def __init__(self, cog, channel, player):
         super().__init__(timeout=None)
         self.cog = cog
         self.channel = channel
         self.player = player
 
-    @discord.ui.button(label="Fahrt antreten 🚍", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="Start the ride 🚍", style=discord.ButtonStyle.green)
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.player:
-            await interaction.response.send_message("Nur der Busfahrer kann starten!", ephemeral=True)
+            await interaction.response.send_message("Only the Busdriver can start!", ephemeral=True)
             return
 
         await interaction.response.defer()
 
-        # BusfahrerEndgame starten!
-        endgame = BusfahrerEndgame(self.cog, self.channel, self.player, interaction.message)
+        endgame = BusdriverEndgame(self.cog, self.channel, self.player, interaction.message)
         await endgame.start()
 
 class LobbyView(discord.ui.View):
@@ -279,11 +275,11 @@ class LobbyView(discord.ui.View):
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         session = self.cog.sessions[self.guild_id]
         if interaction.user != session.host:
-            await interaction.response.send_message("Nur der Host kann starten.", ephemeral=True)
+            await interaction.response.send_message("Only the host can start.", ephemeral=True)
             return
 
         if len(session.players) < 2:
-            await interaction.response.send_message("Mindestens 2 Spieler nötig.", ephemeral=True)
+            await interaction.response.send_message("At least 2 players required.", ephemeral=True)
             return
 
         await self.cog.start_game(self.guild_id, interaction.channel)
@@ -303,13 +299,13 @@ class GameView(discord.ui.View):
         if awaiting_answer:
             options = []
             if round_num == 1:
-                options = [("rot", "🔴", None), ("schwarz", "⚫", None)]
+                options = [("red", "🔴", None), ("black", "⚫", None)]
             elif round_num == 2:
-                options = [("höher", "🔼", None), ("gleich", "🟰", None), ("tiefer", "🔽", None)]
+                options = [("higher", "🔼", None), ("equal", "🟰", None), ("lower", "🔽", None)]
             elif round_num == 3:
-                options = [("außerhalb", None, "Außerhalb"), ("gleich", "🟰", None), ("innerhalb", None, "Innerhalb")]
+                options = [("outside", None, "Outside"), ("equal", "🟰", None), ("inside", None, "Inside")]
             elif round_num == 4:
-                options = [("Herz", "❤️", None), ("Karo", "♦️", None), ("Pik", "♠️", None), ("Kreuz", "♣️", None)]
+                options = [("hearts", "❤️", None), ("diamonds", "♦️", None), ("spades", "♠️", None), ("clubs", "♣️", None)]
 
             for value, emoji, text in options:
                 self.add_item(GameButton(value, emoji, text, self))
@@ -317,9 +313,8 @@ class GameView(discord.ui.View):
             next_button = NextButton(self)
             self.next_button = next_button
             self.add_item(next_button)
-        
+
     async def on_timeout(self):
-        # Wird automatisch nach timeout ausgeführt
         if self.next_button:
             await self.next_button.auto_continue()
 
@@ -331,27 +326,25 @@ class GameButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user != self.view_ref.player:
-            await interaction.response.send_message("Nicht dein Zug!", ephemeral=True)
+            await interaction.response.send_message("Not your turn!", ephemeral=True)
             return
         await self.view_ref.cog.resolve_turn(self.view_ref.guild_id, self.view_ref.player, self.value, interaction)
 
 class NextButton(discord.ui.Button):
     def __init__(self, view):
-        super().__init__(label="Weiter ➡️", style=discord.ButtonStyle.success)
+        super().__init__(label="Next ➡️", style=discord.ButtonStyle.success)
         self.view_ref = view
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user != self.view_ref.player:
-            await interaction.response.send_message("Nur der aktuelle Spieler kann weiterklicken.", ephemeral=True)
+            await interaction.response.send_message("Only the current player can continue.", ephemeral=True)
             return
         await interaction.response.defer()
 
-        self.view_ref.stop()  # WICHTIG → damit der Timer nicht mehr feuert
-        
+        self.view_ref.stop()
         await self.continue_game(interaction.channel)
 
     async def auto_continue(self):
-        # Auto Continue wird von on_timeout aufgerufen
         await self.continue_game(self.view_ref.channel)
 
     async def continue_game(self, channel):
@@ -359,8 +352,7 @@ class NextButton(discord.ui.Button):
         session.current_player_index += 1
         await self.view_ref.cog.next_turn(self.view_ref.guild_id, channel)
 
-### ENDGAME
-class BusfahrerEndgame:
+class BusdriverEndgame:
     def __init__(self, cog, channel, player, message):
         self.cog = cog
         self.channel = channel
@@ -374,9 +366,9 @@ class BusfahrerEndgame:
         self.max_steps = 5
         self.top_cards = self.generate_top_cards()
         self.bottom_card = None
-        self.file_path = "./save_data/busfahrer_scores.json"
+        self.file_path = "./save_data/busdriver_scores.json"
         self.drawn_cards = []
-        self.highest_step = 0  # höchste geschaffte Ebene
+        self.highest_step = 0  # highest completed level
         self.status_message = ""
 
     def generate_top_cards(self):
@@ -392,54 +384,48 @@ class BusfahrerEndgame:
 
     async def send_embed(self):
         embed = discord.Embed(
-            title="🚍 Busfahrerfahrt",
-            description=f"**Busfahrer:** {self.player.display_name}",
+            title="🚍 Busdriver Ride",
+            description=f"**Busdriver:** {self.player.display_name}",
             color=discord.Color.red()
         )
 
-        # Kartenanzeige
         card_display = ""
         for i, card in enumerate(self.top_cards):
-            if i < self.highest_step+1:
+            if i < self.highest_step + 1:
                 card_display += f"{card} "
             else:
                 card_display += "❓ "
-        embed.add_field(name="Karten", value=card_display, inline=False)
+        embed.add_field(name="Top Cards", value=card_display, inline=False)
 
-        # Gezogene Karten HIER hinzufügen:
-        drawn_card_display = " ".join(self.drawn_cards) if self.drawn_cards else "Keine"
-        embed.add_field(name="Gezogene Karten", value=drawn_card_display, inline=False)
+        drawn_card_display = " ".join(self.drawn_cards) if self.drawn_cards else "None"
+        embed.add_field(name="Drawn Cards", value=drawn_card_display, inline=False)
 
         if self.status_message:
-            embed.add_field(name="Ergebnis", value=self.status_message, inline=False)
+            embed.add_field(name="Result", value=self.status_message, inline=False)
 
-        embed.add_field(name="Versuche", value=str(self.tries), inline=True)
-        embed.add_field(name="Schlücke getrunken", value=str(self.sips), inline=True)
-        embed.add_field(name="Stufe", value=str(self.current_step + 1), inline=True)
+        embed.add_field(name="Tries", value=str(self.tries), inline=True)
+        embed.add_field(name="Sips Drunk", value=str(self.sips), inline=True)
+        embed.add_field(name="Step", value=str(self.current_step + 1), inline=True)
 
         if self.current_step >= self.max_steps:
-            embed.description += "\n\n🎉 **Du hast es geschafft!**"
-
-            # SCORE SPEICHERN
+            embed.description += "\n\n🎉 **You made it!**"
             rankings = Rankings(self.cog.bot, self.channel.guild.id)
             rankings.add_result(self.player.id, tries=self.tries, sips=self.sips)
-
             view = None
             del self.cog.sessions[self.channel.guild.id]
-            
         else:
             if self.status_message:
-                view = BusfahrerRetryView(self)  # NEU → zeigt Retry Button
+                view = BusdriverRetryView(self)
             elif self.current_step >= self.max_steps:
-                view = None  # Spiel vorbei → kein Button mehr
+                view = None
             else:
-                view = BusfahrerGameView(self)  # Raten geht weiter
+                view = BusdriverGameView(self)
 
         await self.message.edit(embed=embed, view=view)
 
     async def handle_guess(self, interaction, guess):
         if interaction.user != self.player:
-            await interaction.response.send_message("Nur der Busfahrer kann spielen!", ephemeral=True)
+            await interaction.response.send_message("Only the Busdriver can play!", ephemeral=True)
             return
 
         if self.current_step >= self.max_steps:
@@ -454,11 +440,11 @@ class BusfahrerEndgame:
         correct = False
         penalty = self.current_step + 1
 
-        if guess == "gleich":
+        if guess == "equal":
             correct = prev_value == new_value
-        elif guess == "höher":
+        elif guess == "higher":
             correct = new_value > prev_value
-        elif guess == "tiefer":
+        elif guess == "lower":
             correct = new_value < prev_value
 
         self.drawn_cards.append(self.bottom_card)
@@ -473,13 +459,11 @@ class BusfahrerEndgame:
                 await self.send_embed()
                 return
         else:
-            self.status_message = f"❌ Falsch geraten! {penalty} Schlücke trinken."
+            self.status_message = f"❌ Wrong guess! Drink {penalty} sips."
             self.sips += penalty
-
             self.current_step = 0
             self.tries += 1
-
-            await self.send_embed() 
+            await self.send_embed()
             return
 
         await self.send_embed()
@@ -510,28 +494,24 @@ class BusfahrerEndgame:
 
 # Views und Buttons:
 
-class BusfahrerRetryView(discord.ui.View):
+class BusdriverRetryView(discord.ui.View):
     def __init__(self, game):
         super().__init__(timeout=None)
         self.game = game
 
-    @discord.ui.button(label="🔄️ Erneut versuchen", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="🔄️ Try again", style=discord.ButtonStyle.green)
     async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.game.player:
-            await interaction.response.send_message("Nur der Busfahrer kann weitermachen.", ephemeral=True)
+            await interaction.response.send_message("Only the Busdriver can continue.", ephemeral=True)
             return
 
         await interaction.response.defer()
-
-        # Reset → Status + Karten
         self.game.status_message = ""
         self.game.current_step = 0
         self.game.drawn_cards = []
-
         await self.game.send_embed()
 
-
-class BusfahrerGameView(discord.ui.View):
+class BusdriverGameView(discord.ui.View):
     def __init__(self, game):
         super().__init__(timeout=None)
         self.game = game
@@ -539,18 +519,17 @@ class BusfahrerGameView(discord.ui.View):
     @discord.ui.button(emoji="🔼", style=discord.ButtonStyle.primary)
     async def higher(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await self.game.handle_guess(interaction, "höher")
+        await self.game.handle_guess(interaction, "higher")
 
     @discord.ui.button(emoji="🟰", style=discord.ButtonStyle.primary)
     async def equal(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await self.game.handle_guess(interaction, "gleich")
+        await self.game.handle_guess(interaction, "equal")
 
     @discord.ui.button(emoji="🔽", style=discord.ButtonStyle.primary)
     async def lower(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await self.game.handle_guess(interaction, "tiefer")
-
+        await self.game.handle_guess(interaction, "lower")
 
 ### RANKINGS
 class Rankings:
@@ -558,8 +537,8 @@ class Rankings:
         self.bot = bot
         os.makedirs(SAVE_FOLDER, exist_ok=True)
 
-        self.total_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busfahrer_scores.json")
-        self.daily_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busfahrer_daily.json")
+        self.total_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busdriver_scores.json")
+        self.daily_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busdriver_daily.json")
 
     def _load(self, filename):
         if not os.path.exists(filename):
@@ -578,14 +557,13 @@ class Rankings:
                 return
             mtime = datetime.fromtimestamp(os.path.getmtime(self.daily_file))
             if mtime.date() != now.date():
-                self._save(self.daily_file, {})  # Reset
+                self._save(self.daily_file, {})  # reset daily file
 
     def add_result(self, user_id, tries, sips):
         user_id = str(user_id)
 
         self._reset_daily_if_needed()
 
-        # Gesamt
         total = self._load(self.total_file)
         if user_id not in total:
             total[user_id] = {"tries": 0, "sips": 0}
@@ -593,7 +571,6 @@ class Rankings:
         total[user_id]["sips"] += sips
         self._save(self.total_file, total)
 
-        # Tagesliste
         daily = self._load(self.daily_file)
         if user_id not in daily:
             daily[user_id] = {"tries": 0, "sips": 0}
@@ -611,8 +588,8 @@ class Rankings:
         for i, (user_id, stats) in enumerate(sorted_data[:limit], 1):
             user = self.bot.get_user(int(user_id))
             name = user.display_name if user else f"User {user_id}"
-            result.append(f"{i}. {name} - {stats['sips']} Schlücke, {stats['tries']} Versuche")
-        return "\n".join(result) if result else "Noch keine Einträge."
+            result.append(f"{i}. {name} - {stats['sips']} sips, {stats['tries']} tries")
+        return "\n".join(result) if result else "No entries yet."
 
 async def setup(bot):
-    await bot.add_cog(Busfahrer(bot))
+    await bot.add_cog(Busdriver(bot))

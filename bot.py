@@ -15,11 +15,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    log.info(f"Bot ist bereit → {bot.user}")
+    log.info(f"Bot is ready → {bot.user}")
 
     for guild in bot.guilds:
         await bot.tree.sync(guild=guild)
-        log.info(f"Slash Commands für {guild.name} synchronisiert!")
+        log.info(f"Slash commands synchronized for {guild.name}!")
 
 async def load_extensions():
     for filename in os.listdir("./cogs"):

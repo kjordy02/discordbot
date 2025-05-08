@@ -29,7 +29,7 @@ JUNGLE_ITEMS = {
     "Gustwalker Hatchling": "Gustwalker"
 }
 
-# Ornn Masterwork Items (sollten aus Ultimate Bravery entfernt werden)
+# Ornn Masterwork Items (should be excluded from Ultimate Bravery)
 MASTERWORK_ITEMS = {
     "Forgefire Crest",
     "Rimeforged Grasp",
@@ -64,7 +64,6 @@ MASTERWORK_ITEMS = {
     "Wyrmfallen Sacrifice"
 }
 
-
 class UltimateBravery(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -72,20 +71,20 @@ class UltimateBravery(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        log.info("Ultimate Bravery Modul geladen")
+        log.info("Ultimate Bravery module loaded")
 
     async def fetch_json(self, session, url):
         async with session.get(url) as response:
             return await response.json()
 
-    @app_commands.command(name="ultimatebravery", description="Starte ein Ultimate Bravery Event")
-    @app_commands.describe(spielmodus="Wähle den Spielmodus")
+    @app_commands.command(name="ultimatebravery", description="Start an Ultimate Bravery event")
+    @app_commands.describe(spielmodus="Choose the game mode")
     @app_commands.choices(spielmodus=[
         app_commands.Choice(name="Summoner's Rift", value="sr"),
         app_commands.Choice(name="ARAM", value="aram")
     ])
     async def ultimatebravery(self, interaction: discord.Interaction, spielmodus: app_commands.Choice[str]):
-        await interaction.response.send_message("Ultimate Bravery gestartet! Klickt auf **Join** um teilzunehmen.", view=JoinView(self, interaction.user.id, spielmodus.value))
+        await interaction.response.send_message("Ultimate Bravery started! Click **Join** to participate.", view=JoinView(self, interaction.user.id, spielmodus.value))
 
     async def generate_build(self, user, mode, taken_champions, taken_roles):
         async with aiohttp.ClientSession() as session:
@@ -116,7 +115,7 @@ class UltimateBravery(commands.Cog):
             if "Boots" in i.get("tags", [])
             and i.get("maps", {}).get("11", False)
             and i["name"] != "Slightly Magical Boots"
-]
+        ]
         full_items = [
             i["name"] for i in items_data["data"].values()
             if i.get("gold", {}).get("total", 0) >= 2000 and i.get("maps", {}).get("11", False) and i["name"] not in MASTERWORK_ITEMS
@@ -139,13 +138,13 @@ class UltimateBravery(commands.Cog):
             starter = f"{jungle_choice[0]} → {jungle_choice[1]}"
         else:
             starter = random.choice(STARTER_ITEMS)
-        
+
         first_skill = random.choice(["Q", "W", "E"])
 
         embed = discord.Embed(title=f"🎲 Ultimate Bravery for {user.display_name}", color=discord.Color.gold())
-        embed.add_field(name="Rolle & Champion", value=f"{role or '-'} → **{champion}**", inline=False)
+        embed.add_field(name="Role & Champion", value=f"{role or '-'} → **{champion}**", inline=False)
         embed.add_field(name="Summoner Spells & First Max", value=f"{spell1} + {spell2} → First Max: {first_skill}", inline=False)
-        embed.add_field(name="Runen", value=f"**{primary_path['name']}**: {primary_keystone['name']}, {', '.join(r['name'] for r in primary_runes)}\n**{secondary_path['name']}**: {', '.join(r['name'] for r in secondary_runes)}", inline=False)
+        embed.add_field(name="Runes", value=f"**{primary_path['name']}**: {primary_keystone['name']}, {', '.join(r['name'] for r in primary_runes)}\n**{secondary_path['name']}**: {', '.join(r['name'] for r in secondary_runes)}", inline=False)
         embed.add_field(name="Starter & Items", value=f"Starter: {starter}\n" + "\n".join(f"- {item}" for item in build_items), inline=False)
 
         return embed, champion, role
@@ -162,18 +161,18 @@ class JoinView(discord.ui.View):
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id not in [u.id for u in self.players]:
             self.players.append(interaction.user)
-            await interaction.response.edit_message(content=f"Ultimate Bravery gestartet! Teilnehmer: {', '.join([u.display_name for u in self.players])}", view=self)
+            await interaction.response.edit_message(content=f"Ultimate Bravery started! Participants: {', '.join([u.display_name for u in self.players])}", view=self)
         else:
-            await interaction.response.send_message("Du bist bereits beigetreten!", ephemeral=True)
+            await interaction.response.send_message("You have already joined!", ephemeral=True)
 
     @discord.ui.button(label="Generate Builds", style=discord.ButtonStyle.blurple)
     async def generate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.host_id:
-            await interaction.response.send_message("Nur der Host kann Builds   generieren!", ephemeral=True)
+            await interaction.response.send_message("Only the host can generate builds!", ephemeral=True)
             return
 
         if not self.players:
-            await interaction.response.send_message("Keine Spieler in der Lobby!", ephemeral=True)
+            await interaction.response.send_message("No players in the lobby!", ephemeral=True)
             return
 
         taken_champs = []
@@ -182,12 +181,10 @@ class JoinView(discord.ui.View):
             embed, champ, role = await self.cog.generate_build(player, self.mode, taken_champs, taken_roles)
             await interaction.channel.send(content=player.mention, embed=embed, view=RerollView(self.cog, player, self.mode, taken_champs.copy(), taken_roles.copy()))
 
-        # Disable Buttons after generation (LOBBY SCHLIESSEN)
         for child in self.children:
             child.disabled = True
 
-        await interaction.message.edit(content="❗ **Lobby geschlossen. Builds wurden generiert.**", view=self)
-
+        await interaction.message.edit(content="❗ **Lobby closed. Builds have been generated.**", view=self)
 
 class RerollView(discord.ui.View):
     def __init__(self, cog, player, mode, taken_champs, taken_roles):
@@ -201,7 +198,7 @@ class RerollView(discord.ui.View):
     @discord.ui.button(label="Reroll my Build", style=discord.ButtonStyle.red)
     async def reroll(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.player:
-            await interaction.response.send_message("Du kannst nur dein eigenes Build rerollen!", ephemeral=True)
+            await interaction.response.send_message("You can only reroll your own build!", ephemeral=True)
             return
 
         embed, champ, role = await self.cog.generate_build(self.player, self.mode, self.taken_champs, self.taken_roles)
