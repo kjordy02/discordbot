@@ -1,4 +1,4 @@
-name: Deploy to Raspberry Pi
+name: Deploy Bot (local self-hosted)
 
 on:
   push:
@@ -10,19 +10,9 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USER }}
-          key: ${{ secrets.PI_SSH_KEY }}
-          port: 22
-          script: |
-            cd /home/discordbot/discordbots/gamingbot
-            git pull
-            source discordbot-env/bin/activate
-            pip install -r requirements.txt
-            sudo systemctl restart bot
+      - name: Deploy Bot via SSH
+        run: |
+          ssh discordbot@localhost "cd /home/discordbot/discordbots/gamingbot && git pull && source discordbot-env/bin/activate && pip install -r requirements.txt && sudo systemctl restart bot"
