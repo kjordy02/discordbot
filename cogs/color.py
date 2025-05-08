@@ -6,6 +6,7 @@ import os
 import random
 from datetime import datetime
 from logger import get_logger
+from config import SAVE_FOLDER
 
 log = get_logger(__name__)
 
@@ -13,7 +14,7 @@ class Color(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.color_roles = ["rot", "blau", "gelb", "grün", "orange", "lila", "pink"]
-        self.daily_users_file = "save_data/daily_users.json"
+        self.daily_users_file = os.path.join(SAVE_FOLDER, "daily_users.json")
         self.daily_users = self.load_daily_users()
         self.change_colors_hourly.start()
 
