@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
+import re
 from logger import get_logger
 from config import STEAM_API_KEY
 
@@ -20,14 +21,45 @@ class Steam(commands.GroupCog, name="steam"):
         if identifier.isdigit() and len(identifier) >= 17:
             return identifier
 
-        # Otherwise resolve vanity URL
+        # Check if it's a full profile URL and extract the ID or vanity
+        url_pattern = r"(?:https?://)?steamcommunity\.com/(id|profiles)/([^/]+)/?"
+        match = re.match(url_pattern, identifier)
+        if match:
+            identifier = match.group(2)
+            if match.group(1) == "profiles" and identifier.isdigit():
+                return identifier  # It's already a SteamID64
+
+        # Try resolving as vanity URL
         url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={STEAM_API_KEY}&vanityurl={identifier}"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 data = await resp.json()
                 if data["response"]["success"] == 1:
                     return data["response"]["steamid"]
-                return None
+
+        # Could not resolve
+        return None
+    
+    async def send_invalid_identifier(self, interaction: discord.Interaction, identifier: str):
+        # Send public error
+        await interaction.followup.send(f"❗ Steam profile for `{identifier}` not found.", ephemeral=False)
+
+        # Send ephemeral help guide
+        guide = (
+            "ℹ️ **Why this happened:**\n"
+            "- You might not have set a **Custom URL (Vanity URL)** in your Steam profile.\n"
+            "- You may have used your **Steam display name**, which is not supported.\n\n"
+            "**Supported identifiers:**\n"
+            "✅ SteamID64 (17-digit numeric ID)\n"
+            "✅ Profile URL (https://steamcommunity.com/profiles/...) or Vanity URL (https://steamcommunity.com/id/...)\n\n"
+            "**How to set your Custom URL:**\n"
+            "1. Open your Steam profile in your browser or Steam client.\n"
+            "2. Click 'Edit Profile'.\n"
+            "3. Set your 'Custom URL'.\n"
+            "4. Use `/steam profile <yourCustomURL>` in Discord."
+        )
+        await interaction.followup.send(guide, ephemeral=True)
+
 
     @app_commands.command(name="profile", description="Shows the Steam profile of a player.")
     async def steamprofile(self, interaction: discord.Interaction, steamid: str):
@@ -35,7 +67,7 @@ class Steam(commands.GroupCog, name="steam"):
 
         steamid64 = await self.get_steamid(steamid)
         if not steamid64:
-            await interaction.followup.send("Steam profile not found.")
+            await self.send_invalid_identifier(interaction, steamid)
             return
 
         url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={steamid64}"
@@ -44,12 +76,26 @@ class Steam(commands.GroupCog, name="steam"):
                 data = await resp.json()
 
         player = data["response"]["players"][0]
-
         embed = discord.Embed(title=player["personaname"], url=player["profileurl"], color=discord.Color.blue())
         embed.set_thumbnail(url=player["avatarfull"])
-        embed.add_field(name="Status", value=player.get("personastate", "Unknown"))
-        embed.add_field(name="Account Created", value=player.get("timecreated", "Unknown"))
-        embed.add_field(name="Last Logoff", value=player.get("lastlogoff", "Unknown"))
+
+        status = player.get("personastate", "Unknown")
+        embed.add_field(name="Status", value=status)
+
+        # Convert account creation time
+        time_created = player.get("timecreated")
+        if time_created:
+            created_at = f"<t:{time_created}:f> (<t:{time_created}:R>)"
+        else:
+            created_at = "Unknown"
+        embed.add_field(name="Account Created", value=created_at)
+
+        last_logoff = player.get("lastlogoff")
+        if last_logoff:
+            logoff_at = f"<t:{last_logoff}:f> (<t:{last_logoff}:R>)"
+        else:
+            logoff_at = "Unknown"
+        embed.add_field(name="Last Logoff", value=logoff_at)
 
         await interaction.followup.send(embed=embed)
 
@@ -59,7 +105,7 @@ class Steam(commands.GroupCog, name="steam"):
 
         steamid64 = await self.get_steamid(steamid)
         if not steamid64:
-            await interaction.followup.send("Player not found.")
+            await self.send_invalid_identifier(interaction, steamid)
             return
 
         url = f"https://api.steampowered.com/IPlayerService/GetRecentlyPlayedGames/v1/?key={STEAM_API_KEY}&steamid={steamid64}"
@@ -85,7 +131,7 @@ class Steam(commands.GroupCog, name="steam"):
 
         steamid64 = await self.get_steamid(steamid)
         if not steamid64:
-            await interaction.followup.send("Player not found.")
+            await self.send_invalid_identifier(interaction, steamid)
             return
 
         url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key={STEAM_API_KEY}&steamid={steamid64}&include_appinfo=true"
@@ -122,7 +168,7 @@ class Steam(commands.GroupCog, name="steam"):
         for sid in steamid_list:
             steamid64 = await self.get_steamid(sid)
             if not steamid64:
-                await interaction.followup.send(f"Player {sid} not found or invalid.")
+                await self.send_invalid_identifier(interaction, sid)
                 return
 
             url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key={STEAM_API_KEY}&steamid={steamid64}&include_appinfo=true"

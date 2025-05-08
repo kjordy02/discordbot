@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
+import re
 from urllib.parse import quote
 from logger import get_logger
 from config import RIOT_API_KEY
@@ -23,6 +24,35 @@ class League(commands.Cog):
                 data = await resp.json()
                 champions = data['data']
                 return {int(info['key']): name for name, info in champions.items()}
+    
+
+    @staticmethod
+    def parse_riot_id(input_str: str):
+        """
+        Parses Riot ID in the format 'GameName#TagLine' and returns (game_name, tag_line).
+        Handles edge cases: extra spaces, multiple #, weird characters.
+
+        Returns:
+            (game_name, tag_line) if valid, otherwise None
+        """
+
+        if "#" not in input_str:
+            return None
+
+        # Split only at the FIRST #, in case there are multiple
+        parts = input_str.split("#", 1)
+        game_name = parts[0].strip()
+        tag_line = parts[1].strip()
+
+        # Remove non-visible / invisible unicode characters (zero width spaces, etc)
+        game_name = re.sub(r'\s+', ' ', game_name)  # collapse multiple spaces
+        tag_line = re.sub(r'\s+', '', tag_line)     # taglines never have spaces
+
+        # Validate → Riot allows at least 3 chars GameName + 2 chars Tagline, max 16 and 5
+        if not (3 <= len(game_name) <= 16 and 2 <= len(tag_line) <= 5):
+            return None
+
+        return game_name, tag_line
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -36,15 +66,15 @@ class League(commands.Cog):
             self.champion_mapping = await self.get_champion_mapping()
 
         async with aiohttp.ClientSession() as session:
-            if "#" in summoner_name:
-                try:
-                    game_name, tag_line = summoner_name.split("#")
-                except ValueError:
-                    await interaction.followup.send("Invalid format. Use for example Gragas#EUW.")
-                    return
+
+            parsed = self.parse_riot_id(summoner_name)
+
+            if parsed:
+                game_name, tag_line = parsed
 
                 url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{quote(game_name)}/{quote(tag_line)}?api_key={RIOT_API_KEY}"
                 async with session.get(url) as resp:
+                    log.warning(resp.status_code)
                     if resp.status != 200:
                         await interaction.followup.send("Riot ID not found or invalid.")
                         return
@@ -52,10 +82,11 @@ class League(commands.Cog):
                     puuid = account_data["puuid"]
 
                 summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}?api_key={RIOT_API_KEY}"
-            else:
-                safe_name = quote(summoner_name)
-                summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{safe_name}?api_key={RIOT_API_KEY}"
 
+            else:
+                safe_name = quote(summoner_name.strip())
+                summoner_url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-name/{safe_name}?api_key={RIOT_API_KEY}"
+            
             async with session.get(summoner_url) as resp:
                 if resp.status != 200:
                     await interaction.followup.send("Summoner not found.")
