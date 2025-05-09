@@ -44,17 +44,18 @@ class Admin(commands.Cog):
         }
         data = {
             "title": f"Feedback from {interaction.user.name}",
-            "body": f"**From:** {interaction.user.mention} (`{interaction.user.id}`)\n\n**Feedback:**\n{message}"
+            "body": f"**From:** {interaction.user.name}\n\n**Feedback:**\n{message}",
+            "labels": ["open"]
         }
 
         response = requests.post(url, headers=headers, json=data)
 
         if response.status_code == 201:
             issue_url = response.json()["html_url"]
-            await interaction.followup.send(f"✅ Your feedback has been created: {issue_url}", ephemeral=True)
+            await interaction.followup.send(f"Thanks for your Feedback! Your feedback has been sent!", ephemeral=True)
             log.info(f"Feedback issue created: {issue_url}")
         else:
-            await interaction.followup.send("❌ Error while creating the feedback issue.", ephemeral=True)
+            await interaction.followup.send("Error while sending feedback.", ephemeral=True)
             log.error(f"Error while creating GitHub issue: {response.status_code} {response.text}")
 
 
