@@ -1,7 +1,9 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from discord.ui import View, button, Button
 import aiohttp
+import random
 import re
 from urllib.parse import quote
 from logger import get_logger
@@ -13,7 +15,7 @@ VERSION = "14.9.1"
 BASE_URL = f"http://ddragon.leagueoflegends.com/cdn/{VERSION}/data/en_US"
 CHAMPION_URL = f"{BASE_URL}/champion.json"
 
-class League(commands.Cog):
+class League(commands.GroupCog, name="lol"):
     def __init__(self, bot):
         self.bot = bot
         self.champion_mapping = None
@@ -58,7 +60,7 @@ class League(commands.Cog):
     async def on_ready(self):
         log.info("League module loaded")
 
-    @app_commands.command(name="lolstats", description="Shows League of Legends stats based on Riot ID or Summoner Name")
+    @app_commands.command(name="stats", description="Shows League of Legends stats based on Riot ID or Summoner Name")
     async def lolstats(self, interaction: discord.Interaction, summoner_name: str):
         await interaction.response.defer()
 
@@ -138,6 +140,76 @@ class League(commands.Cog):
             embed.add_field(name="Live Status", value=live_status, inline=False)
 
             await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="randomgroups", description="Creates a custom game lobby and generates two random teams.")
+    async def randomgroups(self, interaction: discord.Interaction):
+        view = TeamLobby(interaction.user)
+        embed = view.get_lobby_embed()
+        await interaction.response.send_message(embed=embed, view=view)
+
+## VIEWS & BUTTONS
+
+class TeamLobby(View):
+    def __init__(self, author: discord.User):
+        super().__init__(timeout=300)  # Lobby läuft max. 5 Minuten
+        self.players = []
+        self.author = author
+        self.message = None
+
+    @button(label="Join", style=discord.ButtonStyle.green)
+    async def join(self, interaction: discord.Interaction, button: Button):
+        user = interaction.user
+        if user in self.players:
+            await interaction.response.send_message("You already joined!", ephemeral=True)
+            return
+
+        self.players.append(user)
+        await interaction.response.edit_message(embed=self.get_lobby_embed(), view=self)
+
+    @button(label="Leave", style=discord.ButtonStyle.red)
+    async def leave(self, interaction: discord.Interaction, button: Button):
+        user = interaction.user
+        if user not in self.players:
+            await interaction.response.send_message("You are not in the lobby!", ephemeral=True)
+            return
+
+        self.players.remove(user)
+        await interaction.response.edit_message(embed=self.get_lobby_embed(), view=self)
+
+    @button(label="Generate Teams", style=discord.ButtonStyle.blurple)
+    async def generate(self, interaction: discord.Interaction, button: Button):
+        if interaction.user != self.author:
+            await interaction.response.send_message("Only the command initiator can generate teams.", ephemeral=True)
+            return
+
+        if len(self.players) < 2:
+            await interaction.response.send_message("Need at least 2 players to generate teams.", ephemeral=True)
+            return
+
+        team1, team2 = self.split_teams(self.players)
+        embed = discord.Embed(title="Teams Generated", color=discord.Color.green())
+        embed.add_field(name="Team 1", value="\n".join(p.display_name for p in team1), inline=True)
+        embed.add_field(name="Team 2", value="\n".join(p.display_name for p in team2), inline=True)
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    def get_lobby_embed(self):
+        embed = discord.Embed(title="Custom Lobby", description="Click 'Join' to participate", color=discord.Color.blue())
+        if self.players:
+            embed.add_field(name="Current Players", value="\n".join(p.display_name for p in self.players), inline=False)
+        else:
+            embed.add_field(name="Current Players", value="No one yet...", inline=False)
+        embed.set_footer(text="Lobby open for 5 minutes")
+        return embed
+
+    def split_teams(self, players):
+        shuffled = players[:]
+        random.shuffle(shuffled)
+        mid = len(shuffled) // 2
+        return shuffled[:mid], shuffled[mid:]
 
 async def setup(bot):
     await bot.add_cog(League(bot))
