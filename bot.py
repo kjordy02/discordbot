@@ -1,6 +1,9 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import os
+import sys
+import asyncio
 from logger import get_logger
 from config import DISCORDBOT_TOKEN
 
@@ -18,23 +21,39 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     log.info(f"Bot is ready → {bot.user}")
 
-    for guild in bot.guilds:
-        try:
-            synced = await bot.tree.sync(guild=guild)
-            log.info(f"{len(synced)} Slash commands synchronized for {guild.name}!")
-        except Exception as e:
-            log.error(f"Failed to sync commands: {e}")
-
-
 async def load_extensions():
     for filename in os.listdir("./cogs"):
         if filename.endswith(".py"):
             await bot.load_extension(f"cogs.{filename[:-3]}")
 
-async def main():
+async def run_bot():
     async with bot:
         await load_extensions()
         await bot.start(DISCORDBOT_TOKEN)
 
-import asyncio
-asyncio.run(main())
+# -----------------------------------------
+# 🔧 CLI ENTRYPOINT FOR SYNCING SLASH COMMANDS
+# Usage: python bot.py sync
+# -----------------------------------------
+
+async def sync_commands():
+    """Globally sync all slash commands without running the bot."""
+    await bot.login(DISCORDBOT_TOKEN)
+    await load_extensions()  # Ensure all app_commands are loaded
+
+    try:
+        synced = await bot.tree.sync()
+        log.info(f"Synced {len(synced)} global slash commands.")
+    except Exception as e:
+        log.error(f"Failed to sync: {e}")
+    await bot.close()
+
+# -----------------------------------------
+
+if __name__ == "__main__":
+    discord.utils.setup_logging()
+
+    if "sync" in sys.argv:
+        asyncio.run(sync_commands())
+    else:
+        asyncio.run(run_bot())
