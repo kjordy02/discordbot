@@ -34,25 +34,11 @@ class Busdriver(commands.GroupCog, name="busdriver"):
             self.awaiting_continue = False
 
     def generate_deck(self):
-        suits = ["❤️", "♠️", "♦️", "♣️"]
+        suits = ["H", "D", "S", "C"]
         values = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-        deck = [f"{v}{s}" for v in values for s in suits]
+        deck = [f"{v}{s}" for s in suits for v in values]
         random.shuffle(deck)
         return deck
-
-    def card_value(self, card):
-        value = ''.join(filter(str.isdigit, card)) or card[0]
-        order = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-        return order.index(value)
-
-    def card_color(self, card):
-        return "red" if "❤️" in card or "♦️" in card else "black"
-
-    def card_suit(self, card):
-        if "❤️" in card: return "hearts"
-        if "♦️" in card: return "diamonds"
-        if "♠️" in card: return "spades"
-        if "♣️" in card: return "clubs"
 
     @app_commands.command(name="v2", description="Start Busdriver 2.0")
     async def start_busdriver(self, interaction: discord.Interaction):
@@ -130,7 +116,7 @@ class Busdriver(commands.GroupCog, name="busdriver"):
         )
 
         cards = session.cards.setdefault(player.id, [])
-        card_text = " ".join(cards) if cards else "*None*"
+        card_text = " ".join([self.bot.card_emojis.get(card) or f"[{card}]" for card in cards]) if cards else "*None*"
         embed.add_field(name="Drawn cards", value=card_text, inline=False)
 
         points_text = "\n".join([
@@ -157,15 +143,22 @@ class Busdriver(commands.GroupCog, name="busdriver"):
         points = 0
         drink_text = ""
 
+        value = next_card[:-1]
+        suit = next_card[-1]
+        color = "red" if suit in ("H", "D") else "black"
+        suit_name = {"H": "hearts", "D": "diamonds", "S": "spades", "C": "clubs"}[suit]
+        value_order = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+
         if session.round == 1:
-            result = guess == self.card_color(next_card)
+            result = guess == color
             penalty = 1
             points = 10 if result else 0
+
         elif session.round == 2:
             if len(cards) < 2:
                 return await interaction.response.send_message("No comparison card available!", ephemeral=True)
-            prev = self.card_value(cards[-2])
-            cur = self.card_value(next_card)
+            prev = value_order.index(cards[-2][:-1])
+            cur = value_order.index(value)
             penalty = 2
             if guess == "equal":
                 result = prev == cur
@@ -176,10 +169,11 @@ class Busdriver(commands.GroupCog, name="busdriver"):
             else:
                 result = cur < prev
                 points = 10 if result else 0
+
         elif session.round == 3:
-            vals = [self.card_value(c) for c in cards[:-1]]
+            vals = [value_order.index(c[:-1]) for c in cards[:-1]]
             min_val, max_val = min(vals), max(vals)
-            cur = self.card_value(next_card)
+            cur = value_order.index(value)
             penalty = 3
             if cur in vals:
                 result = guess == "equal"
@@ -191,17 +185,22 @@ class Busdriver(commands.GroupCog, name="busdriver"):
                 elif guess == "inside":
                     result = min_val < cur < max_val
                     points = 10 if result else 0
+
         elif session.round == 4:
-            result = guess == self.card_suit(next_card)
+            result = guess == suit_name
             penalty = 4
             points = 30 if result else 0
 
         session.points[player.id] += points
 
+        emoji = self.bot.card_emojis.get(next_card)
+        if not emoji:
+            emoji = f"[{next_card}]"
+
         if result:
-            drink_text = f"✅ Correct! {'Give' if points > 0 else 'No action.'} {penalty * 2 if (('equal' in guess) or (session.round == 4)) else penalty} sips."
+            drink_text = f"{emoji} ✅ Correct! {'Give' if points > 0 else 'No action.'} {penalty * 2 if (('equal' in guess) or (session.round == 4)) else penalty} sips."
         else:
-            drink_text = f"❌ Wrong! Drink {penalty * (2 if guess == 'equal' else 1)} sips."
+            drink_text = f"{emoji} ❌ Wrong! Drink {penalty * (2 if guess == 'equal' else 1)} sips."
 
         session.results[player.id] = drink_text
         session.awaiting_continue = True
@@ -364,19 +363,16 @@ class BusdriverEndgame:
         self.sips = 0
 
         self.max_steps = 5
-        self.top_cards = self.generate_top_cards()
+        self.deck = self.cog.generate_deck()
+        self.top_cards = [self.deck.pop() for _ in range(self.max_steps)]
         self.bottom_card = None
         self.file_path = "./save_data/busdriver_scores.json"
         self.drawn_cards = []
         self.highest_step = 0  # highest completed level
         self.status_message = ""
 
-    def generate_top_cards(self):
-        deck = self.cog.generate_deck()
-        return [deck.pop() for _ in range(self.max_steps)]
-
     def draw_bottom_card(self):
-        deck = self.cog.generate_deck()
+        deck = self.deck
         return deck.pop()
 
     async def start(self):
@@ -392,12 +388,12 @@ class BusdriverEndgame:
         card_display = ""
         for i, card in enumerate(self.top_cards):
             if i < self.highest_step + 1:
-                card_display += f"{card} "
+                card_display += f"{self.cog.bot.card_emojis.get(card)} "
             else:
-                card_display += "❓ "
+                card_display += f"{self.cog.bot.card_emojis.get('back')} "
         embed.add_field(name="Top Cards", value=card_display, inline=False)
 
-        drawn_card_display = " ".join(self.drawn_cards) if self.drawn_cards else "None"
+        drawn_card_display = " ".join([self.cog.bot.card_emojis.get(card) for card in self.drawn_cards]) if self.drawn_cards else "None"
         embed.add_field(name="Drawn Cards", value=drawn_card_display, inline=False)
 
         if self.status_message:
@@ -434,8 +430,12 @@ class BusdriverEndgame:
         current_card = self.top_cards[self.current_step]
         self.bottom_card = self.draw_bottom_card()
 
-        prev_value = self.cog.card_value(current_card)
-        new_value = self.cog.card_value(self.bottom_card)
+        order = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+        prev_val = ''.join(filter(str.isdigit, current_card)) or current_card[0]
+        new_val = ''.join(filter(str.isdigit, self.bottom_card)) or self.bottom_card[0]
+
+        prev_value = order.index(prev_val)
+        new_value = order.index(new_val)
 
         correct = False
         penalty = self.current_step + 1
@@ -509,6 +509,9 @@ class BusdriverRetryView(discord.ui.View):
         self.game.status_message = ""
         self.game.current_step = 0
         self.game.drawn_cards = []
+
+        random.shuffle(self.game.deck)
+
         await self.game.send_embed()
 
 class BusdriverGameView(discord.ui.View):

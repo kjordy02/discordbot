@@ -4,6 +4,7 @@ from discord import app_commands
 import os
 import sys
 import asyncio
+from helper.card_emojis import CardEmojiManager
 from logger import get_logger
 from config import DISCORDBOT_TOKEN
 
@@ -20,6 +21,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     log.info(f"Bot is ready → {bot.user}")
+
+    if not hasattr(bot, "card_emojis"):
+        from helper.card_emojis import CardEmojiManager
+        bot.card_emojis = CardEmojiManager(bot)
+        await bot.card_emojis.load()
+        log.info("Card emojis loaded successfully.")
 
 async def load_extensions():
     for filename in os.listdir("./cogs"):
