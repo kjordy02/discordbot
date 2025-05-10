@@ -19,8 +19,12 @@ async def on_ready():
     log.info(f"Bot is ready → {bot.user}")
 
     for guild in bot.guilds:
-        await bot.tree.sync(guild=guild)
-        log.info(f"Slash commands synchronized for {guild.name}!")
+        try:
+            synced = await bot.tree.sync(guild=guild)
+            log.info(f"{len(synced)} Slash commands synchronized for {guild.name}!")
+        except Exception as e:
+            log.error(f"Failed to sync commands: {e}")
+
 
 async def load_extensions():
     for filename in os.listdir("./cogs"):
