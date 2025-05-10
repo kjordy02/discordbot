@@ -25,21 +25,33 @@ class HorseRace(commands.GroupCog, name="horserace"):
             self.players = {}  # user_id -> {"member": member, "bet": 0, "horse": None}
             self.started = False
             self.deck = []
-            self.progress = {"Hearts": 0, "Diamonds": 0, "Spades": 0, "Clubs": 0}
+            self.progress = {"H": 0, "D": 0, "S": 0, "C": 0}
             self.blockades = []
             self.finished = False
             self.winner = None
-            self.reached_levels = {"Hearts": set(), "Diamonds": set(), "Spades": set(), "Clubs": set()}
+            self.reached_levels = {"H": set(), "D": set(), "S": set(), "C": set()}
             self.lobby_view = None
 
         def generate_deck(self):
-            suits = ["Hearts", "Diamonds", "Spades", "Clubs"]
+            suits = ["H", "D", "S", "C"]
             values = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-            deck = [f"{v} {s}" for s in suits for v in values]
+            full_deck = [f"{v}{s}" for s in suits for v in values]
+
+            # Asse entfernen (Startpferde)
             for suit in suits:
-                deck.remove(f"A {suit}")
-            random.shuffle(deck)
-            return deck
+                full_deck.remove(f"A{suit}")
+
+            # Blockadekarten zufällig ziehen aus den verbliebenen Karten
+            blockade_cards = random.sample(full_deck, 4)
+
+            # Diese Karten entfernen
+            for card in blockade_cards:
+                full_deck.remove(card)
+
+            # Restliches Deck mischen
+            random.shuffle(full_deck)
+
+            return full_deck, blockade_cards
 
     @app_commands.command(name="start", description="Start a horse race drinking game")
     async def start_race(self, interaction: discord.Interaction):
@@ -62,7 +74,9 @@ class HorseRace(commands.GroupCog, name="horserace"):
 
         desc = ""
         for p in session.players.values():
-            desc += f"{p['member'].mention} {self.get_symbol(p['horse'])} {p['bet']} sips\n"
+            suit = p["horse"]
+            emoji = self.bot.card_emojis[f"A{suit}"]
+            desc += f"{p['member'].mention} {emoji} {p['bet']} sips\n"
 
         if not desc:
             desc = "*No one yet*"
@@ -70,24 +84,16 @@ class HorseRace(commands.GroupCog, name="horserace"):
         embed = discord.Embed(title="🐎 Horse Race Lobby", description=desc, color=discord.Color.green())
         await session.message.edit(embed=embed, view=PregameView(self, guild_id))
 
-    def get_symbol(self, suit):
-        return {
-            "Hearts": "❤️",
-            "Diamonds": "♦️",
-            "Spades": "♠️",
-            "Clubs": "♣️"
-        }[suit]
-
     async def start_race_game(self, guild_id, channel):
         session = self.sessions[guild_id]
 
         await session.message.edit(view=None)
 
         session.started = True
-        session.deck = session.generate_deck()
-        session.blockades = ["HIDDEN", "HIDDEN", "HIDDEN", "HIDDEN"]
-        session.blockade_targets = random.sample(["Hearts", "Diamonds", "Spades", "Clubs"], 4)
-        session.blockade_revealed = [False, False, False, False]
+        session.deck, blockade_cards = session.generate_deck()
+        session.blockade_targets = [card[-1] for card in blockade_cards]
+        session.blockades = ["HIDDEN"] * 4
+        session.blockade_revealed = [False] * 4
 
         await session.message.edit(embed=self.build_race_embed(session), view=None)
 
@@ -98,7 +104,8 @@ class HorseRace(commands.GroupCog, name="horserace"):
                 break
 
             card = session.deck.pop()
-            _, suit = card.split()
+            suit = card[-1]
+            value = card[:-1]
 
             session.progress[suit] += 1
             session.reached_levels[suit].add(session.progress[suit])
@@ -114,7 +121,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
 
                     if all(blockade_level in levels for levels in session.reached_levels.values()):
                         target = session.blockade_targets[blockade_index]
-                        session.blockades[blockade_index] = f"{self.get_symbol(target)}"
+                        session.blockades[blockade_index] = self.bot.card_emojis[f"{target}"]
                         session.blockade_revealed[blockade_index] = True
 
                         await session.message.edit(embed=self.build_race_embed(session, reset=target, last_card=card), view=None)
@@ -134,27 +141,31 @@ class HorseRace(commands.GroupCog, name="horserace"):
 
         bets = []
         for p in session.players.values():
-            bets.append(f"{p['member'].mention} ({p['horse']} - {p['bet']} sips)")
+            suit = p["horse"]
+            emoji = self.bot.card_emojis[f"A{suit}"]
+            bets.append(f"{p['member'].mention} ({emoji} - {p['bet']} sips)")
         embed.add_field(name="💰 Bets", value="\n".join(bets), inline=False)
 
         if last_card:
-            embed.add_field(name="🃏 Last Card", value=last_card, inline=False)
+            emoji = self.bot.card_emojis[last_card]
+            embed.add_field(name="🃏 Last Card", value=emoji, inline=False)
 
         blockade_line = "⬛"
         for blockade_card in session.blockades:
-            blockade_line += blockade_card if blockade_card != "HIDDEN" else "❓"
+            blockade_line += blockade_card if blockade_card != "HIDDEN" else self.bot.card_emojis["back"]
         blockade_line += "👑"
         embed.add_field(name="⠀", value=blockade_line, inline=False)
 
-        for suit in ["Hearts", "Diamonds", "Spades", "Clubs"]:
+        suit_names = {"H": "Hearts", "D": "Diamonds", "S": "Spades", "C": "Clubs"}
+        for suit in ["H", "D", "S", "C"]:
             if session.progress[suit] == 0:
-                line = f"{self.get_symbol(suit)}"
+                line = self.bot.card_emojis[f"A{suit}"]
             else:
                 line = "⬜"
 
             for i in range(1, 6):
                 if session.progress[suit] == i:
-                    line += self.get_symbol(suit)
+                    line += self.bot.card_emojis[f"A{suit}"]
                 elif i == 5:
                     line += "👑" if session.finished and suit == session.winner else "🟩"
                 else:
@@ -168,7 +179,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
         session = self.sessions[guild_id]
         embed = self.build_race_embed(session)
 
-        result_text = f"🎉 **{self.get_symbol(session.winner)} {session.winner} has won!**\n\n"
+        result_text = f"🎉 **{self.bot.card_emojis[f'A{session.winner}']} {session.winner} has won!**\n\n"
         winners = []
 
         for p in session.players.values():
@@ -256,7 +267,12 @@ class PlayerJoinConfirmButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         session = self.cog.sessions[self.guild_id]
 
-        pending = self.cog.pending_joins[self.guild_id][self.player_id]
+        guild_pending = self.cog.pending_joins.get(self.guild_id, {})
+        pending = guild_pending.get(self.player_id)
+
+        if not pending:
+            await interaction.response.send_message("Your join session has expired. Please try again.", ephemeral=True)
+            return
 
         if not pending["horse"] or not pending["bet"]:
             await interaction.response.send_message("Please choose your horse and bet first!", ephemeral=True)
@@ -282,10 +298,10 @@ class PlayerHorseDropdown(discord.ui.Select):
         current = player_data.get("horse", None)
 
         options = [
-            discord.SelectOption(label="Hearts", emoji="❤️", default=(current == "Hearts")),
-            discord.SelectOption(label="Diamonds", emoji="♦️", default=(current == "Diamonds")),
-            discord.SelectOption(label="Spades", emoji="♠️", default=(current == "Spades")),
-            discord.SelectOption(label="Clubs", emoji="♣️", default=(current == "Clubs")),
+            discord.SelectOption(label="Hearts", value="H", emoji="❤️", default=(current == "H")),
+            discord.SelectOption(label="Diamonds", value="D", emoji="♦️", default=(current == "D")),
+            discord.SelectOption(label="Spades", value="S", emoji="♠️", default=(current == "S")),
+            discord.SelectOption(label="Clubs", value="C", emoji="♣️", default=(current == "C")),
         ]
 
         super().__init__(placeholder="Choose your horse", min_values=1, max_values=1, options=options, disabled=locked)
