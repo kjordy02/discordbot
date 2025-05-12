@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 import re
+from difflib import get_close_matches
 from logger import get_logger
 from config import STEAM_API_KEY
 
@@ -59,7 +60,41 @@ class Steam(commands.GroupCog, name="steam"):
             "4. Use `/steam profile <yourCustomURL>` in Discord."
         )
         await interaction.followup.send(guide, ephemeral=True)
+    
+    @staticmethod
+    def find_best_match(games, user_input):
+        user_input = re.sub(r'\W+', '', user_input).lower()
+        exact = []
+        starts = []
+        contains = []
 
+        for game in games:
+            raw_name = game.get("name", "")
+            normalized_name = re.sub(r'\W+', '', raw_name).lower()
+
+            if normalized_name == user_input:
+                exact.append(game)
+            elif normalized_name.startswith(user_input):
+                starts.append(game)
+            elif user_input in normalized_name:
+                contains.append(game)
+
+        if exact:
+            return exact[0]
+        if starts:
+            return starts[0]
+        if contains:
+            from difflib import get_close_matches
+            norm_names = [re.sub(r'\W+', '', g["name"]).lower() for g in contains]
+            matches = get_close_matches(user_input, norm_names, n=1, cutoff=0.0)
+            if matches:
+                for g in contains:
+                    if re.sub(r'\W+', '', g["name"]).lower() == matches[0]:
+                        return g
+            contains.sort(key=lambda g: g.get("playtime_forever", 0), reverse=True)
+            return contains[0]
+
+        return None
 
     @app_commands.command(name="profile", description="Shows the Steam profile of a player.")
     async def steamprofile(self, interaction: discord.Interaction, steamid: str):
@@ -140,18 +175,34 @@ class Steam(commands.GroupCog, name="steam"):
                 data = await resp.json()
 
         games = data.get("response", {}).get("games", [])
-        found = None
-        for game in games:
-            if game_name.lower() in game["name"].lower():
-                found = game
-                break
+        found = self.find_best_match(games, game_name)
 
         if not found:
             await interaction.followup.send("Game not found or no playtime recorded.")
             return
 
-        hours = round(found["playtime_forever"] / 60)
-        embed = discord.Embed(title=found["name"], description=f"Total playtime: {hours} hours", color=discord.Color.purple())
+        hours_total = round(found["playtime_forever"] / 60)
+        hours_recent = round(found.get("playtime_2weeks", 0) / 60)
+
+        embed = discord.Embed(
+            title=found["name"],
+            description=f"🎮 Total playtime: **{hours_total} hours**\n🕒 Last 2 weeks: **{hours_recent} hours**",
+            color=discord.Color.purple()
+        )
+
+       # img_logo_url is NOT always present or not valid
+        logo_hash = found.get("img_logo_url")
+        appid = found.get("appid")
+
+        if logo_hash:
+            logo_url = f"https://media.steampowered.com/steamcommunity/public/images/apps/{appid}/{logo_hash}.jpg"
+            embed.set_thumbnail(url=logo_url)
+
+        # Optional: Steam Stats
+        if found.get("has_community_visible_stats"):
+            stats_url = f"https://steamcommunity.com/stats/{appid}/achievements/"
+            embed.add_field(name="🔗 Steam Stats", value=f"[View Achievements]({stats_url})", inline=False)
+        
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="common", description="Shows games that all given Steam accounts have in common.")
