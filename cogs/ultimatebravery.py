@@ -64,7 +64,7 @@ MASTERWORK_ITEMS = {
     "Wyrmfallen Sacrifice"
 }
 
-class UltimateBravery(commands.GroupCog, name="lol"):
+class UltimateBravery(commands.Cog):
     # Main class for the Ultimate Bravery game cog
     def __init__(self, bot):
         self.bot = bot
