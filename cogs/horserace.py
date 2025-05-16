@@ -3,27 +3,30 @@ from discord.ext import commands
 from discord import app_commands
 import asyncio
 import random
+from helper.stats_formatter import StatsFormatter as SF
 from logger import get_logger
-from config import SAVE_FOLDER
 
 log = get_logger(__name__)
 
 class HorseRace(commands.GroupCog, name="horserace"):
-    # Main class for the Horse Race game cog
+    """Main class for the Horse Race game cog."""
 
     def __init__(self, bot):
+        """Initializes the HorseRace cog with the bot instance."""
         self.bot = bot
         self.sessions = {}  # Active race sessions by guild ID
         self.pending_joins = {}  # Pending join requests by guild ID
+        self.session_id = None  # For tracking DB session ID
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # Event listener triggered when the bot is ready
+        """Event listener triggered when the bot is ready."""
         log.info("HorseRace module loaded and ready.")
 
     class RaceSession:
-        # Represents a single race session
+        """Represents a single race session."""
         def __init__(self, host):
+            """Initializes a new race session."""
             self.host = host  # The user who started the race
             self.players = {}  # Mapping of user_id -> {"member": member, "bet": 0, "horse": None}
             self.started = False  # Indicates if the race has started
@@ -36,7 +39,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
             self.lobby_view = None  # The lobby view for the session
 
         def generate_deck(self):
-            # Generates a shuffled deck and selects blockade cards
+            """Generates a shuffled deck and selects blockade cards."""
             suits = ["H", "D", "S", "C"]
             values = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
             full_deck = [f"{v}{s}" for s in suits for v in values]
@@ -59,7 +62,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
 
     @app_commands.command(name="start", description="Start a horse race drinking game")
     async def start_race(self, interaction: discord.Interaction):
-        # Starts a new horse race session
+        """Starts a new horse race session."""
         guild_id = interaction.guild.id
         if guild_id in self.sessions:
             await interaction.response.send_message("A race is already running!", ephemeral=True)
@@ -76,8 +79,33 @@ class HorseRace(commands.GroupCog, name="horserace"):
         session.message = await interaction.original_response()
         log.info(f"Started a new race in guild {interaction.guild.name} by {interaction.user.display_name}.")
 
+    @app_commands.command(name="stats", description="Show Horserace rankings")
+    async def stats(self, interaction: discord.Interaction):
+        """Displays Horserace rankings."""
+        await interaction.response.defer()
+        db = self.bot.db
+        gid = interaction.guild.id
+
+        stats = {
+            "🏆 All Time (Global)": {
+                "🍻 Most Drunk": SF.format_top_list(db.get_horserace_main_ranking("sips_drunk", "global")),
+                "🎯 Most Given": SF.format_top_list(db.get_horserace_main_ranking("sips_given", "global"))
+            },
+            "🏘️ All Time (This Server)": {
+                "🍻 Most Drunk": SF.format_top_list(db.get_horserace_main_ranking("sips_drunk", "server", gid)),
+                "🎯 Most Given": SF.format_top_list(db.get_horserace_main_ranking("sips_given", "server", gid))
+            },
+            "🌙 Today (This Server)": {
+                "🍻 Most Drunk": SF.format_top_list(db.get_horserace_main_ranking("sips_drunk", "server", gid, today=True)),
+                "🎯 Most Given": SF.format_top_list(db.get_horserace_main_ranking("sips_given", "server", gid, today=True))
+            }
+        }
+
+        embed = SF.build_embed("🐎 Horserace Stats", stats)
+        await interaction.followup.send(embed=embed)
+
     async def update_lobby(self, guild_id):
-        # Updates the lobby message with the current list of players
+        """Updates the lobby message with the current list of players."""
         session = self.sessions[guild_id]
 
         desc = ""
@@ -97,7 +125,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
             log.error(f"Failed to update lobby for guild {guild_id}: {e}")
 
     async def start_race_game(self, guild_id, channel):
-        # Starts the actual race game
+        """Starts the actual race game."""
         session = self.sessions[guild_id]
 
         try:
@@ -106,6 +134,17 @@ class HorseRace(commands.GroupCog, name="horserace"):
             log.error(f"Failed to clear lobby view for guild {guild_id}: {e}")
 
         session.started = True
+        # Direkt nach: session.started = True
+        db = self.bot.db
+        server_db_id = db.get_or_create_server(guild_id)
+        session.session_id = db.create_game_session(server_db_id, "horserace")
+
+        # Save bets as drunk sips
+        for player_id, pdata in session.players.items():
+            user_db_id = db.get_or_create_user(player_id)
+            db.insert_horserace_stat(session.session_id, user_db_id, sips_drunk=pdata["bet"], sips_given=0)
+
+        # Initialize 
         session.deck, blockade_cards = session.generate_deck()
         session.blockade_targets = [card[-1] for card in blockade_cards]
         session.blockades = ["HIDDEN"] * 4
@@ -168,7 +207,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
         await self.finish_race(guild_id, channel)
 
     def build_race_embed(self, session, reset=None, last_card=None):
-        # Builds the embed message displaying the current state of the race
+        """Builds the embed message displaying the current state of the race."""
         embed = discord.Embed(title="🐎 Horse Race in Progress...", color=discord.Color.blue())
 
         bets = []
@@ -218,7 +257,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
         return embed
 
     async def finish_race(self, guild_id, channel):
-        # Handles the end of the race
+        """Handles the end of the race."""
         session = self.sessions[guild_id]
         embed = self.build_race_embed(session)
 
@@ -229,6 +268,11 @@ class HorseRace(commands.GroupCog, name="horserace"):
         # Identify players who bet on the winning horse
         for p in session.players.values():
             if p["horse"] == session.winner:
+                # update the database with the winnings
+                db = self.bot.db
+                user_id = db.get_or_create_user(p["member"].id)
+                db.update_horserace_given(session.session_id, user_id, sips=p["bet"] * 2)
+                # Add the player to the winners list
                 winners.append((p["member"], p["bet"] * 2))
 
         if winners:
@@ -252,7 +296,7 @@ class HorseRace(commands.GroupCog, name="horserace"):
 # --------------------- VIEWS ----------------------------
 
 class PregameView(discord.ui.View):
-    # View for the pregame lobby where players can join or leave
+    """View for the pregame lobby where players can join or leave."""
     def __init__(self, cog, guild_id):
         super().__init__(timeout=None)
         self.cog = cog
@@ -260,7 +304,7 @@ class PregameView(discord.ui.View):
 
     @discord.ui.button(label="Join", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handle a player joining the lobby
+        """Handle a player joining the lobby."""
         session = self.cog.sessions[self.guild_id]
 
         if interaction.user.id in session.players:
@@ -284,7 +328,7 @@ class PregameView(discord.ui.View):
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.red)
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handle a player leaving the lobby
+        """Handle a player leaving the lobby."""
         session = self.cog.sessions[self.guild_id]
         if interaction.user.id in session.players:
             # Remove the player from the session
@@ -294,7 +338,7 @@ class PregameView(discord.ui.View):
 
     @discord.ui.button(label="Start", style=discord.ButtonStyle.blurple)
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handle starting the race
+        """Handle starting the race."""
         session = self.cog.sessions[self.guild_id]
 
         if interaction.user != session.host:
@@ -312,7 +356,7 @@ class PregameView(discord.ui.View):
         await self.cog.start_race_game(self.guild_id, interaction.channel)  # Start the race
 
 class PlayerJoinSelectionView(discord.ui.View):
-    # View for selecting a horse and bet when joining the lobby
+    """View for selecting a horse and bet when joining the lobby."""
     def __init__(self, cog, guild_id, player_id):
         super().__init__(timeout=None)
         self.cog = cog
@@ -325,7 +369,7 @@ class PlayerJoinSelectionView(discord.ui.View):
         self.add_item(PlayerJoinConfirmButton(cog, guild_id, player_id))
 
 class PlayerJoinConfirmButton(discord.ui.Button):
-    # Button for confirming the player's join selection
+    """Button for confirming the player's join selection."""
     def __init__(self, cog, guild_id, player_id):
         super().__init__(label="Join", style=discord.ButtonStyle.success)
         self.cog = cog
@@ -333,7 +377,7 @@ class PlayerJoinConfirmButton(discord.ui.Button):
         self.player_id = player_id
 
     async def callback(self, interaction: discord.Interaction):
-        # Handle the player's join confirmation
+        """Handle the player's join confirmation."""
         session = self.cog.sessions[self.guild_id]
 
         guild_pending = self.cog.pending_joins.get(self.guild_id, {})
@@ -365,7 +409,7 @@ class PlayerJoinConfirmButton(discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
 
 class PlayerHorseDropdown(discord.ui.Select):
-    # Dropdown for selecting a horse
+    """Dropdown for selecting a horse."""
     def __init__(self, cog, guild_id, player_id, locked):
         session = cog.sessions[guild_id]
         player_data = session.players.get(player_id, {})
@@ -385,13 +429,13 @@ class PlayerHorseDropdown(discord.ui.Select):
         self.player_id = player_id
 
     async def callback(self, interaction: discord.Interaction):
-        # Handle the horse selection
+        """Handle the horse selection."""
         pending = self.cog.pending_joins[self.guild_id][self.player_id]
         pending["horse"] = self.values[0]
         await interaction.response.defer()
 
 class PlayerBetDropdown(discord.ui.Select):
-    # Dropdown for selecting a bet
+    """Dropdown for selecting a bet."""
     def __init__(self, cog, guild_id, player_id, locked):
         session = cog.sessions[guild_id]
         player_data = session.players.get(player_id, {})
@@ -406,7 +450,7 @@ class PlayerBetDropdown(discord.ui.Select):
         self.player_id = player_id
 
     async def callback(self, interaction: discord.Interaction):
-        # Handle the bet selection
+        """Handle the bet selection."""
         pending = self.cog.pending_joins[self.guild_id][self.player_id]
         pending["bet"] = int(self.values[0])
         await interaction.response.defer()
@@ -414,7 +458,7 @@ class PlayerBetDropdown(discord.ui.Select):
 # --------------------- SETUP ----------------------------
 
 async def setup(bot):
-    # Setup function to add the HorseRace cog to the bot
+    """Sets up the HorseRace cog."""
     try:
         # Attempt to add the HorseRace cog to the bot
         await bot.add_cog(HorseRace(bot))

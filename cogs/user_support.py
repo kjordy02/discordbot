@@ -8,27 +8,46 @@ from config import GITHUB_REPO, GITHUB_TOKEN
 log = get_logger(__name__)
 
 class UserSupport(commands.Cog):
-    ## Cog for user feedback, bug reporting, and help commands
+    """Cog for user feedback, bug reporting, and help commands."""
 
     def __init__(self, bot: commands.Bot):
+        """Initializes the UserSupport cog with the bot instance."""
         self.bot = bot
 
     @commands.Cog.listener()
     async def on_ready(self):
+        """Event listener triggered when the bot is ready."""
         log.info("UserSupport module loaded.")
 
     @app_commands.command(name="givefeedback", description="Send feedback to the bot maintainers.")
     @app_commands.describe(message="Describe your feedback")
     async def give_feedback(self, interaction: discord.Interaction, message: str):
+        """Handles the `/givefeedback` command to send feedback.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the command.
+            message (str): The feedback message provided by the user.
+        """
         await self.create_github_issue(interaction, message, label="feedback")
 
     @app_commands.command(name="reportbug", description="Report a bug you encountered.")
     @app_commands.describe(message="Describe the bug you encountered")
     async def report_bug(self, interaction: discord.Interaction, message: str):
+        """Handles the `/reportbug` command to report a bug.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the command.
+            message (str): The bug description provided by the user.
+        """
         await self.create_github_issue(interaction, message, label="bug")
 
     @app_commands.command(name="help", description="Display general help information.")
     async def help_command(self, interaction: discord.Interaction):
+        """Handles the `/help` command to display general help information.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the command.
+        """
         # Sends a help message listing all available commands
         help_text = (
             "Available Commands:\n"
@@ -46,7 +65,13 @@ class UserSupport(commands.Cog):
             await interaction.response.send_message("An error occurred while displaying the help message.", ephemeral=True)
 
     async def create_github_issue(self, interaction: discord.Interaction, message: str, label: str):
-        # Creates a GitHub issue for feedback or bug reports
+        """Creates a GitHub issue for feedback or bug reports.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the command.
+            message (str): The content of the feedback or bug report.
+            label (str): The label to categorize the issue (e.g., "feedback" or "bug").
+        """
         await interaction.response.defer(ephemeral=True)
 
         # Prepare the GitHub API request
@@ -79,7 +104,7 @@ class UserSupport(commands.Cog):
             await interaction.followup.send("An unexpected error occurred while submitting your request.", ephemeral=True)
 
 async def setup(bot: commands.Bot):
-    # Adds the UserSupport cog to the bot
+    """Sets up the UserSupport cog."""
     try:
         await bot.add_cog(UserSupport(bot))
         log.info("UserSupport cog successfully added to the bot.")

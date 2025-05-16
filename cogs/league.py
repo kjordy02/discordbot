@@ -16,14 +16,14 @@ BASE_URL = f"http://ddragon.leagueoflegends.com/cdn/{VERSION}/data/en_US"
 CHAMPION_URL = f"{BASE_URL}/champion.json"
 
 class League(commands.GroupCog, name="lol"):
-    # Main class for League of Legends-related commands
+    """Main class for League of Legends-related commands"""
 
     def __init__(self, bot):
         self.bot = bot
         self.champion_mapping = None  # Cache for champion ID-to-name mapping
 
     async def get_champion_mapping(self):
-        # Fetches and caches the champion ID-to-name mapping from Riot's API
+        """Fetches and caches the champion ID-to-name mapping from Riot's API"""
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(CHAMPION_URL) as resp:
@@ -40,8 +40,8 @@ class League(commands.GroupCog, name="lol"):
 
     @staticmethod
     def parse_riot_id(input_str: str):
-        # Parses Riot ID in the format 'GameName#TagLine' and validates it
-        # Returns (game_name, tag_line) if valid, otherwise None
+        """Parses Riot ID in the format 'GameName#TagLine' and validates it
+        Returns (game_name, tag_line) if valid, otherwise None"""
         if "#" not in input_str:
             return None
 
@@ -59,12 +59,12 @@ class League(commands.GroupCog, name="lol"):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # Event listener triggered when the bot is ready
+        """Event listener triggered when the bot is ready"""
         log.info("League module loaded and ready.")
 
     @app_commands.command(name="stats", description="Shows League of Legends stats based on Riot ID or Summoner Name")
     async def lolstats(self, interaction: discord.Interaction, summoner_name: str):
-        # Fetches and displays League of Legends stats for a given Riot ID or Summoner Name
+        """Fetches and displays League of Legends stats for a given Riot ID or Summoner Name"""
         await interaction.response.defer()
         log.info(f"Fetching stats for: {summoner_name}")
 
@@ -160,7 +160,7 @@ class League(commands.GroupCog, name="lol"):
 
     @app_commands.command(name="randomgroups", description="Creates a custom game lobby and generates two random teams.")
     async def randomgroups(self, interaction: discord.Interaction):
-        # Creates a custom game lobby and generates two random teams
+        """Creates a custom game lobby and generates two random teams"""
         try:
             view = TeamLobby(interaction.user)
             embed = view.get_lobby_embed()
@@ -236,7 +236,7 @@ class TeamLobby(View):
         return shuffled[:mid], shuffled[mid:]
 
 async def setup(bot):
-    # Setup function to add the League cog to the bot
+    """Setup function to add the League cog to the bot"""
     try:
         # Attempt to add the League cog to the bot
         await bot.add_cog(League(bot))

@@ -2,28 +2,29 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import random
-import json
-import os
+from helper.stats_formatter import StatsFormatter as SF
 from logger import get_logger
-from config import SAVE_FOLDER
-from datetime import datetime
 from helper.cardgames import generate_standard_deck  # Import the helper function
 
 log = get_logger(__name__)
 
-class Busdriver(commands.GroupCog, name="busdriver"):
-    # Main class for the Busdriver game cog
+class Busdriver(commands.GroupCog, name="busdriverv2"):
+    """Main class for the Busdriver game cog"""
+
     def __init__(self, bot):
+        """Initializes the Busdriver cog with the bot instance."""
         self.bot = bot
         self.sessions = {}
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # Event listener triggered when the bot is ready
+        """Event listener triggered when the bot is ready."""
         log.info("Busdriver module successfully loaded and ready.")
 
     class GameSession:
+        """Represents a single game session of Busdriver."""
         def __init__(self, host):
+            """Initializes a new game session."""
             self.host = host  # The user who started the game
             self.players = []  # List of players in the session
             self.started = False  # Indicates if the game has started
@@ -35,10 +36,12 @@ class Busdriver(commands.GroupCog, name="busdriver"):
             self.results = {}  # Results of each player's turn
             self.game_message = None  # The game message for interaction
             self.awaiting_continue = False  # Whether the game is waiting for a player to continue
+            self.sips_given = {}  # player_id -> int
+            self.sips_drunk = {}  # player_id -> int
 
-    @app_commands.command(name="v2", description="Start Busdriver 2.0")
+    @app_commands.command(name="start", description="Start Busdriver 2.0")
     async def start_busdriver(self, interaction: discord.Interaction):
-        # Starts a new Busdriver game session
+        """Starts a new Busdriver game session."""
         guild_id = interaction.guild.id
         if guild_id in self.sessions:
             # Prevents starting a new game if one is already running
@@ -61,22 +64,36 @@ class Busdriver(commands.GroupCog, name="busdriver"):
             log.error(f"Error starting Busdriver game in guild {interaction.guild.name}: {e}")
             await interaction.response.send_message("An error occurred while starting the game. Please try again later.", ephemeral=True)
 
-    @app_commands.command(name="rangliste", description="Show the overall Busdriver ranking")
-    async def rangliste(self, interaction: discord.Interaction):
-        # Displays the overall ranking for the Busdriver game
-        rankings = Rankings(self.bot, interaction.guild.id)
-        ranking_text = rankings.get_ranking(daily=False)
-        await interaction.response.send_message(f"**Overall Busdriver Ranking:**\n\n{ranking_text}")
+    @app_commands.command(name="stats", description="Show Busdriver 2.0 rankings")
+    async def stats(self, interaction: discord.Interaction):
+        """Displays Busdriver rankings."""
+        await interaction.response.defer()
+        db = self.bot.db
+        gid = interaction.guild.id
 
-    @app_commands.command(name="tagesrangliste", description="Show today's Busdriver ranking")
-    async def tagesrangliste(self, interaction: discord.Interaction):
-        # Displays today's ranking for the Busdriver game
-        rankings = Rankings(self.bot, interaction.guild.id)
-        ranking_text = rankings.get_ranking(daily=True)
-        await interaction.response.send_message(f"**Today's Busdriver Ranking:**\n\n{ranking_text}")
+        stats = {
+            "🏆 All Time (Global)": {
+                "🍻 Most Drunk": SF.format_top_list(db.get_busdriver_main_ranking("sips_drunk", "global")),
+                "🎯 Most Given": SF.format_top_list(db.get_busdriver_main_ranking("sips_given", "global")),
+                "🛣️ Longest Drive": SF.format_endgame_list(db.get_busdriver_endgame_ranking("sips", "global"))
+            },
+            "🏘️ All Time (This Server)": {
+                "🍻 Most Drunk": SF.format_top_list(db.get_busdriver_main_ranking("sips_drunk", "server", gid)),
+                "🎯 Most Given": SF.format_top_list(db.get_busdriver_main_ranking("sips_given", "server", gid)),
+                "🛣️ Longest Drive": SF.format_endgame_list(db.get_busdriver_endgame_ranking("sips", "server", gid))
+            },
+            "🌙 Today (This Server)": {
+                "🍻 Most Drunk": SF.format_top_list(db.get_busdriver_main_ranking("sips_drunk", "server", gid, today=True)),
+                "🎯 Most Given": SF.format_top_list(db.get_busdriver_main_ranking("sips_given", "server", gid, today=True)),
+                "🛣️ Longest Drive": SF.format_endgame_list(db.get_busdriver_endgame_ranking("sips", "server", gid, today=True))
+            }
+        }
+
+        embed = SF.build_embed("🚌 Busdriver Stats", stats)
+        await interaction.followup.send(embed=embed)
 
     async def update_lobby(self, guild_id):
-        # Updates the lobby message with the current list of players
+        """Updates the lobby message with the current list of players."""
         try:
             session = self.sessions[guild_id]
             player_list = "\n".join([p.display_name for p in session.players]) or "*no one*"
@@ -89,7 +106,7 @@ class Busdriver(commands.GroupCog, name="busdriver"):
             log.error(f"Error updating lobby for guild {guild_id}: {e}")
 
     async def start_game(self, guild_id, channel):
-        # Starts the game by initializing the deck and player data
+        """Starts the game by initializing the deck and player data."""
         try:
             session = self.sessions[guild_id]
             session.started = True
@@ -99,6 +116,8 @@ class Busdriver(commands.GroupCog, name="busdriver"):
                 session.cards[player.id] = []  # Initialize empty card list for each player
                 session.points[player.id] = 0  # Initialize points for each player
                 session.results[player.id] = ""  # Initialize results for each player
+                session.sips_given[player.id] = 0  # Initialize sips given for each player
+                session.sips_drunk[player.id] = 0  # Initialize sips drunk for each player
 
             log.info(f"Game started in guild {guild_id} with {len(session.players)} players.")
             await self.next_turn(guild_id, channel)  # Start the first turn
@@ -108,7 +127,7 @@ class Busdriver(commands.GroupCog, name="busdriver"):
             await channel.send("An error occurred while starting the game. Please try again later.")
 
     async def next_turn(self, guild_id, channel):
-        # Handles the logic for progressing to the next player's turn
+        """Handles the logic for progressing to the next player's turn."""
         session = self.sessions[guild_id]
 
         if session.current_player_index >= len(session.players):
@@ -135,7 +154,7 @@ class Busdriver(commands.GroupCog, name="busdriver"):
             await session.game_message.edit(embed=embed, view=view)
 
     def build_embed(self, session, player):
-        # Builds the embed message for the current game state
+        """Builds the embed message for the current game state."""
         embed = discord.Embed(
             title="🚌 Busdriver 2.0",
             description=f"Current player: 🚌 **{player.display_name}**",
@@ -159,7 +178,7 @@ class Busdriver(commands.GroupCog, name="busdriver"):
         return embed
     
     async def resolve_turn(self, guild_id, player, guess, interaction):
-        # Resolves the current player's turn based on their guess
+        """Resolves the current player's turn based on their guess."""
         session = self.sessions[guild_id]
         cards = session.cards.setdefault(player.id, [])
 
@@ -230,9 +249,13 @@ class Busdriver(commands.GroupCog, name="busdriver"):
 
         # Generate the result text based on whether the guess was correct
         if result:
-            drink_text = f"{emoji} ✅ Correct! {'Give' if points > 0 else 'No action.'} {penalty * 2 if (('equal' in guess) or (session.round == 4)) else penalty} sips."
+            given = penalty * (2 if 'equal' in guess or session.round == 4 else 1)
+            session.sips_given[player.id] += given
+            session.results[player.id] = f"{emoji} ✅ Correct! Give {given} sips."
         else:
-            drink_text = f"{emoji} ❌ Wrong! Drink {penalty * (2 if guess == 'equal' else 1)} sips."
+            drunk = penalty * (2 if guess == 'equal' else 1)
+            session.sips_drunk[player.id] += drunk
+            session.results[player.id] = f"{emoji} ❌ Wrong! Drink {drunk} sips."
 
         session.results[player.id] = drink_text
         session.awaiting_continue = True
@@ -243,7 +266,7 @@ class Busdriver(commands.GroupCog, name="busdriver"):
         await interaction.response.edit_message(embed=embed, view=view)
 
     async def finish_game(self, channel, session):
-        # Ends the game and determines the Busdriver
+        """Ends the game and determines the Busdriver."""
         try:
             losers = sorted(session.points.items(), key=lambda x: x[1])
             lowest = losers[0][1]
@@ -259,6 +282,23 @@ class Busdriver(commands.GroupCog, name="busdriver"):
                 color=discord.Color.red()
             )
 
+            # Add the stats of the game to the database
+            db = self.bot.db
+            session_id = db.create_game_session(
+                server_id=str(channel.guild.id),
+                game_name="busdriver_main"
+            )
+
+            for player in session.players:
+                db.add_busdriver_main_stat(
+                    discord_id=str(player.id),
+                    server_id=str(channel.guild.id),
+                    session_id=session_id,
+                    sips_given=session.sips_given.get(player.id, 0),
+                    sips_drunk=session.sips_drunk.get(player.id, 0)
+                )
+
+            # Create a new game session for the Busdriver endgame
             view = BusdriverStartView(self, channel, busdriver_user)
 
             # Update the game message with the Busdriver announcement
@@ -272,7 +312,7 @@ class Busdriver(commands.GroupCog, name="busdriver"):
 ### Views and Buttons
 
 class BusdriverStartView(discord.ui.View):
-    # View for starting the Busdriver ride
+    """View for starting the Busdriver ride."""
     def __init__(self, cog, channel, player):
         super().__init__(timeout=None)
         self.cog = cog
@@ -281,7 +321,7 @@ class BusdriverStartView(discord.ui.View):
 
     @discord.ui.button(label="Start the ride 🚍", style=discord.ButtonStyle.green)
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Only the Busdriver can start the ride
+        """Only the Busdriver can start the ride."""
         if interaction.user != self.player:
             await interaction.response.send_message("Only the Busdriver can start!", ephemeral=True)
             return
@@ -293,7 +333,7 @@ class BusdriverStartView(discord.ui.View):
         await endgame.start()
 
 class LobbyView(discord.ui.View):
-    # View for the game lobby where players can join or leave
+    """View for the game lobby where players can join or leave."""
     def __init__(self, cog, guild_id):
         super().__init__(timeout=None)
         self.cog = cog
@@ -301,7 +341,7 @@ class LobbyView(discord.ui.View):
 
     @discord.ui.button(label="Join", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Add the user to the game session
+        """Add the user to the game session."""
         session = self.cog.sessions[self.guild_id]
         if interaction.user not in session.players:
             session.players.append(interaction.user)
@@ -310,7 +350,7 @@ class LobbyView(discord.ui.View):
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.red)
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Remove the user from the game session
+        """Remove the user from the game session."""
         session = self.cog.sessions[self.guild_id]
         if interaction.user in session.players:
             session.players.remove(interaction.user)
@@ -319,7 +359,7 @@ class LobbyView(discord.ui.View):
 
     @discord.ui.button(label="Start", style=discord.ButtonStyle.blurple)
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Start the game if the user is the host and there are enough players
+        """Start the game if the user is the host and there are enough players."""
         session = self.cog.sessions[self.guild_id]
         if interaction.user != session.host:
             await interaction.response.send_message("Only the host can start.", ephemeral=True)
@@ -332,7 +372,7 @@ class LobbyView(discord.ui.View):
         await self.cog.start_game(self.guild_id, interaction.channel)
 
 class GameView(discord.ui.View):
-    # View for the game interface during a player's turn
+    """View for the game interface during a player's turn."""
     def __init__(self, cog, guild_id, player, round_num, awaiting_answer, channel):
         timeout = 5 if not awaiting_answer else None
         super().__init__(timeout=timeout)
@@ -365,32 +405,32 @@ class GameView(discord.ui.View):
             self.add_item(next_button)
 
     async def on_timeout(self):
-        # Automatically continue the game if the view times out
+        """Automatically continue the game if the view times out."""
         if self.next_button:
             await self.next_button.auto_continue()
 
 class GameButton(discord.ui.Button):
-    # Button for making a guess during a player's turn
+    """Button for making a guess during a player's turn."""
     def __init__(self, label, emoji, text_label, view):
         super().__init__(label=text_label if text_label else (emoji if emoji else label.capitalize()), style=discord.ButtonStyle.primary)
         self.value = label
         self.view_ref = view
 
     async def callback(self, interaction: discord.Interaction):
-        # Handle the player's guess
+        """Handle the player's guess."""
         if interaction.user != self.view_ref.player:
             await interaction.response.send_message("Not your turn!", ephemeral=True)
             return
         await self.view_ref.cog.resolve_turn(self.view_ref.guild_id, self.view_ref.player, self.value, interaction)
 
 class NextButton(discord.ui.Button):
-    # Button for continuing to the next turn
+    """Button for continuing to the next turn."""
     def __init__(self, view):
         super().__init__(label="Next ➡️", style=discord.ButtonStyle.success)
         self.view_ref = view
 
     async def callback(self, interaction: discord.Interaction):
-        # Handle the "Next" button click
+        """Handle the "Next" button click."""
         if interaction.user != self.view_ref.player:
             await interaction.response.send_message("Only the current player can continue.", ephemeral=True)
             return
@@ -400,17 +440,17 @@ class NextButton(discord.ui.Button):
         await self.continue_game(interaction.channel)
 
     async def auto_continue(self):
-        # Automatically continue the game
+        """Automatically continue the game."""
         await self.continue_game(self.view_ref.channel)
 
     async def continue_game(self, channel):
-        # Progress to the next player's turn
+        """Progress to the next player's turn."""
         session = self.view_ref.cog.sessions[self.view_ref.guild_id]
         session.current_player_index += 1
         await self.view_ref.cog.next_turn(self.view_ref.guild_id, channel)
 
 class BusdriverEndgame:
-    # Handles the endgame phase of the Busdriver game.The Busdriver must complete a series of steps by guessing card values correctly.
+    """Handles the endgame phase of the Busdriver game.The Busdriver must complete a series of steps by guessing card values correctly."""
 
     def __init__(self, cog, channel, player, message):
         self.cog = cog  # Reference to the parent cog
@@ -423,7 +463,7 @@ class BusdriverEndgame:
         self.sips = 0  # Total sips the Busdriver has taken
 
         self.max_steps = 5  # Total number of steps to complete
-        self.deck = self.cog.generate_deck()  # Generate a shuffled deck
+        self.deck = generate_standard_deck()  # Generate a shuffled deck
         self.top_cards = [self.deck.pop() for _ in range(self.max_steps)]  # Cards for the steps
         self.bottom_card = None  # The card drawn for comparison
         self.file_path = "./save_data/busdriver_scores.json"  # Path to save scores
@@ -432,11 +472,11 @@ class BusdriverEndgame:
         self.status_message = ""  # Status message for the current step
 
     def draw_bottom_card(self):
-        # Draws the next card from the deck for comparison
+        """Draws the next card from the deck for comparison."""
         return self.deck.pop()
 
     async def start(self):
-        # Starts the endgame phase by sending the initial embed
+        """Starts the endgame phase by sending the initial embed."""
         await self.send_embed()
 
     async def send_embed(self):
@@ -474,8 +514,21 @@ class BusdriverEndgame:
         # Check if the Busdriver has completed all steps
         if self.current_step >= self.max_steps:
             embed.description += "\n\n🎉 **You made it!**"
-            rankings = Rankings(self.cog.bot, self.channel.guild.id)
-            rankings.add_result(self.player.id, tries=self.tries, sips=self.sips)
+
+            # Save the Busdriver's score to the database
+            session_id = self.cog.bot.db.create_game_session(
+                server_id=str(self.channel.guild.id),
+                game_name="busdriver_endgame"
+            )
+
+            self.cog.bot.db.add_busdriver_endgame_stat(
+                discord_id=str(self.player.id),
+                server_id=str(self.channel.guild.id),
+                session_id=session_id,
+                sips_drunk=self.sips,
+                tries=self.tries
+            )
+
             view = None  # No further interaction needed
             del self.cog.sessions[self.channel.guild.id]  # Remove the session
         else:
@@ -550,23 +603,18 @@ class BusdriverEndgame:
 
         await self.send_embed()
 
-    async def save_score(self):
-        # Delegates saving the Busdriver's score to the Rankings class.
-
-        rankings = Rankings(self.cog.bot, self.channel.guild.id)
-        rankings.add_result(self.player.id, tries=self.tries, sips=self.sips)
 
 # Views und Buttons:
 
 class BusdriverRetryView(discord.ui.View):
-    # View for retrying the Busdriver endgame
+    """View for retrying the Busdriver endgame."""
     def __init__(self, game):
         super().__init__(timeout=None)
         self.game = game
 
     @discord.ui.button(label="🔄️ Try again", style=discord.ButtonStyle.green)
     async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Allow the Busdriver to retry the endgame
+        """Allow the Busdriver to retry the endgame."""
         if interaction.user != self.game.player:
             await interaction.response.send_message("Only the Busdriver can continue.", ephemeral=True)
             return
@@ -581,102 +629,32 @@ class BusdriverRetryView(discord.ui.View):
         await self.game.send_embed()  # Update the embed with the new state
 
 class BusdriverGameView(discord.ui.View):
-    # View for the Busdriver endgame interface
+    """View for the Busdriver endgame interface."""
     def __init__(self, game):
         super().__init__(timeout=None)
         self.game = game
 
     @discord.ui.button(emoji="🔼", style=discord.ButtonStyle.primary)
     async def higher(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handle the "higher" guess
+        """Handle the "higher" guess."""
         await interaction.response.defer()
         await self.game.handle_guess(interaction, "higher")
 
     @discord.ui.button(emoji="🟰", style=discord.ButtonStyle.primary)
     async def equal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handle the "equal" guess
+        """Handle the "equal" guess."""
         await interaction.response.defer()
         await self.game.handle_guess(interaction, "equal")
 
     @discord.ui.button(emoji="🔽", style=discord.ButtonStyle.primary)
     async def lower(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handle the "lower" guess
+        """Handle the "lower" guess."""
         await interaction.response.defer()
         await self.game.handle_guess(interaction, "lower")
 
-### RANKINGS
-class Rankings:
-    # Handles ranking data for the Busdriver game
-    def __init__(self, bot, guild_id):
-        self.bot = bot
-        os.makedirs(SAVE_FOLDER, exist_ok=True)  # Ensure the save folder exists
-
-        # Paths for total and daily ranking files
-        self.total_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busdriver_scores.json")
-        self.daily_file = os.path.join(SAVE_FOLDER, f"{guild_id}_busdriver_daily.json")
-
-    def _load(self, filename):
-        # Load ranking data from a file
-        if not os.path.exists(filename):
-            return {}
-        with open(filename, "r") as f:
-            return json.load(f)
-
-    def _save(self, filename, data):
-        # Save ranking data to a file
-        with open(filename, "w") as f:
-            json.dump(data, f)
-
-    def _reset_daily_if_needed(self):
-        # Reset the daily ranking file if it's a new day
-        now = datetime.now()
-        if now.hour >= 12:
-            if not os.path.exists(self.daily_file):
-                return
-            mtime = datetime.fromtimestamp(os.path.getmtime(self.daily_file))
-            if mtime.date() != now.date():
-                self._save(self.daily_file, {})  # Reset daily file
-
-    def add_result(self, user_id, tries, sips):
-        # Add a player's result to the rankings
-        user_id = str(user_id)
-
-        self._reset_daily_if_needed()
-
-        # Update total rankings
-        total = self._load(self.total_file)
-        if user_id not in total:
-            total[user_id] = {"tries": 0, "sips": 0}
-        total[user_id]["tries"] += tries
-        total[user_id]["sips"] += sips
-        self._save(self.total_file, total)
-
-        # Update daily rankings
-        daily = self._load(self.daily_file)
-        if user_id not in daily:
-            daily[user_id] = {"tries": 0, "sips": 0}
-        daily[user_id]["tries"] += tries
-        daily[user_id]["sips"] += sips
-        self._save(self.daily_file, daily)
-
-    def get_ranking(self, daily=False, limit=10):
-        # Retrieve the ranking data (daily or total)
-        filename = self.daily_file if daily else self.total_file
-        data = self._load(filename)
-
-        # Sort players by sips (descending) and tries (ascending)
-        sorted_data = sorted(data.items(), key=lambda x: (-x[1]["sips"], x[1]["tries"]))
-
-        # Format the ranking as a string
-        result = []
-        for i, (user_id, stats) in enumerate(sorted_data[:limit], 1):
-            user = self.bot.get_user(int(user_id))
-            name = user.display_name if user else f"User {user_id}"
-            result.append(f"{i}. {name} - {stats['sips']} sips, {stats['tries']} tries")
-        return "\n".join(result) if result else "No entries yet."
 
 async def setup(bot):
-    # Sets up the Busdriver cog.
+    """Sets up the Busdriver cog."""
     try:
         # Attempt to add the Color cog to the bot
         await bot.add_cog(Busdriver(bot))

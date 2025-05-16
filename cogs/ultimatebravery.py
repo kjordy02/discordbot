@@ -65,18 +65,28 @@ MASTERWORK_ITEMS = {
 }
 
 class UltimateBravery(commands.Cog):
-    # Main class for the Ultimate Bravery game cog
+    """Main class for the Ultimate Bravery game cog."""
+
     def __init__(self, bot):
+        """Initializes the Ultimate Bravery cog with the bot instance."""
         self.bot = bot
         self.events = {}
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # Event listener triggered when the bot is ready
+        """Event listener triggered when the bot is ready."""
         log.info("Ultimate Bravery module loaded and ready.")
 
     async def fetch_json(self, session, url):
-        # Fetches JSON data from a given URL
+        """Fetches JSON data from a given URL.
+
+        Args:
+            session (aiohttp.ClientSession): The HTTP session to use for the request.
+            url (str): The URL to fetch data from.
+
+        Returns:
+            dict: The JSON data fetched from the URL, or an empty dictionary if the request fails.
+        """
         try:
             async with session.get(url) as response:
                 if response.status != 200:
@@ -95,7 +105,12 @@ class UltimateBravery(commands.Cog):
         app_commands.Choice(name="ARAM", value="aram")
     ])
     async def ultimatebravery(self, interaction: discord.Interaction, spielmodus: app_commands.Choice[str]):
-        # Starts an Ultimate Bravery event
+        """Starts an Ultimate Bravery event.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the command.
+            spielmodus (app_commands.Choice[str]): The selected game mode.
+        """
         try:
             await interaction.response.send_message("Ultimate Bravery started! Click **Join** to participate.", view=JoinView(self, interaction.user.id, spielmodus.value))
             log.info(f"Ultimate Bravery event started by {interaction.user.display_name}.")
@@ -105,7 +120,17 @@ class UltimateBravery(commands.Cog):
             await interaction.response.send_message("An error occurred while starting the event. Please try again later.", ephemeral=True)
 
     async def generate_build(self, user, mode, taken_champions, taken_roles):
-        # Generates a random build for a player
+        """Generates a random build for a player.
+
+        Args:
+            user (discord.User): The user for whom the build is being generated.
+            mode (str): The game mode (e.g., "sr" or "aram").
+            taken_champions (list): A list of champions already assigned.
+            taken_roles (list): A list of roles already assigned.
+
+        Returns:
+            tuple: A tuple containing the embed, champion, and role.
+        """
         try:
             async with aiohttp.ClientSession() as session:
                 champions_data = await self.fetch_json(session, CHAMPION_URL)
@@ -183,8 +208,16 @@ class UltimateBravery(commands.Cog):
             return None, None, None
 
 class JoinView(discord.ui.View):
-    # View for the Ultimate Bravery lobby where players can join or generate builds
+    """View for the Ultimate Bravery lobby where players can join or generate builds."""
+
     def __init__(self, cog, host_id, mode):
+        """Initializes the JoinView.
+
+        Args:
+            cog (UltimateBravery): The parent cog instance.
+            host_id (int): The ID of the host who started the event.
+            mode (str): The selected game mode.
+        """
         super().__init__(timeout=None)
         self.cog = cog  # Reference to the parent cog
         self.host_id = host_id  # ID of the host who started the event
@@ -193,7 +226,12 @@ class JoinView(discord.ui.View):
 
     @discord.ui.button(label="Join", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handles a player joining the lobby
+        """Handles a player joining the lobby.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the button click.
+            button (discord.ui.Button): The button that was clicked.
+        """
         if interaction.user.id not in [u.id for u in self.players]:
             # Add the player to the list if they haven't joined yet
             self.players.append(interaction.user)
@@ -208,7 +246,12 @@ class JoinView(discord.ui.View):
 
     @discord.ui.button(label="Generate Builds", style=discord.ButtonStyle.blurple)
     async def generate(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handles generating builds for all players in the lobby
+        """Handles generating builds for all players in the lobby.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the button click.
+            button (discord.ui.Button): The button that was clicked.
+        """
         if interaction.user.id != self.host_id:
             # Only the host can generate builds
             await interaction.response.send_message("Only the host can generate builds!", ephemeral=True)
@@ -243,8 +286,18 @@ class JoinView(discord.ui.View):
             await interaction.response.send_message("An error occurred while generating builds. Please try again later.", ephemeral=True)
 
 class RerollView(discord.ui.View):
-    # View for allowing players to reroll their builds
+    """View for allowing players to reroll their builds."""
+
     def __init__(self, cog, player, mode, taken_champs, taken_roles):
+        """Initializes the RerollView.
+
+        Args:
+            cog (UltimateBravery): The parent cog instance.
+            player (discord.User): The player who owns this view.
+            mode (str): The selected game mode.
+            taken_champs (list): A list of champions already assigned.
+            taken_roles (list): A list of roles already assigned.
+        """
         super().__init__(timeout=900)  # Timeout after 15 minutes
         self.cog = cog  # Reference to the parent cog
         self.player = player  # The player who owns this view
@@ -254,7 +307,12 @@ class RerollView(discord.ui.View):
 
     @discord.ui.button(label="Reroll my Build", style=discord.ButtonStyle.red)
     async def reroll(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Handles rerolling the player's build
+        """Handles rerolling the player's build.
+
+        Args:
+            interaction (discord.Interaction): The interaction object for the button click.
+            button (discord.ui.Button): The button that was clicked.
+        """
         if interaction.user != self.player:
             # Ensure only the player can reroll their own build
             await interaction.response.send_message("You can only reroll your own build!", ephemeral=True)
@@ -271,7 +329,7 @@ class RerollView(discord.ui.View):
             await interaction.response.send_message("An error occurred while rerolling your build. Please try again later.", ephemeral=True)
 
 async def setup(bot):
-    # Setup function to add the Ultimate Bravery cog to the bot
+    """Sets up the Ultimate Bravery cog."""
     try:
         await bot.add_cog(UltimateBravery(bot))
         log.info("Ultimate Bravery cog successfully added to the bot.")

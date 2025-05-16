@@ -5,6 +5,7 @@ import os
 import sys
 import asyncio
 from helper.card_emojis import CardEmojiManager
+from helper.db import Database
 from logger import get_logger
 from config import DISCORDBOT_TOKEN
 
@@ -46,6 +47,15 @@ async def load_extensions():
         log.error(f"Error loading extensions: {e}")
 
 async def run_bot():
+
+    try:
+        bot.db = Database()
+        bot.db.setup_tables()
+        log.info("Database initialized and tables ensured.")
+    except Exception as e:
+        log.error(f"Failed to initialize database: {e}")
+        return  # Verhindere, dass der Bot ohne DB weiterläuft
+
     async with bot:
         await load_extensions()
         await bot.start(DISCORDBOT_TOKEN)

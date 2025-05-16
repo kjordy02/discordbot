@@ -10,17 +10,19 @@ from config import STEAM_API_KEY
 log = get_logger(__name__)
 
 class Steam(commands.GroupCog, name="steam"):
-    # Main class for Steam-related commands
+    """Main class for Steam-related commands."""
+
     def __init__(self, bot):
+        """Initializes the Steam cog with the bot instance."""
         self.bot = bot
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # Event listener triggered when the bot is ready
+        """Event listener triggered when the bot is ready."""
         log.info("Steam module loaded and ready.")
 
     async def get_steamid(self, identifier):
-        # Resolves a Steam identifier (SteamID64, profile URL, or vanity URL) to a SteamID64
+        """Resolves a Steam identifier (SteamID64, profile URL, or vanity URL) to a SteamID64."""
         try:
             # Check if the identifier is a valid SteamID64
             if identifier.isdigit() and len(identifier) >= 17:
@@ -55,7 +57,7 @@ class Steam(commands.GroupCog, name="steam"):
             return None
 
     async def send_invalid_identifier(self, interaction: discord.Interaction, identifier: str):
-        # Sends an error message for invalid Steam identifiers
+        """Sends an error message for invalid Steam identifiers."""
         try:
             # Send a public error message
             await interaction.followup.send(f"❗ Steam profile for `{identifier}` not found.", ephemeral=False)
@@ -82,7 +84,7 @@ class Steam(commands.GroupCog, name="steam"):
     
     @staticmethod
     def find_best_match(games, user_input):
-        # Finds the best matching game from a list of games based on user input
+        """Finds the best matching game from a list of games based on user input."""
         user_input = re.sub(r'\W+', '', user_input).lower()
         exact = []
         starts = []
@@ -118,7 +120,7 @@ class Steam(commands.GroupCog, name="steam"):
 
     @app_commands.command(name="profile", description="Shows the Steam profile of a player.")
     async def steamprofile(self, interaction: discord.Interaction, steamid: str):
-        # Fetches and displays the Steam profile of a player
+        """Fetches and displays the Steam profile of a player."""
         await interaction.response.defer()
         log.info(f"Fetching profile for: {steamid}")
 
@@ -168,7 +170,7 @@ class Steam(commands.GroupCog, name="steam"):
 
     @app_commands.command(name="recent", description="Shows the most recently played games of a player.")
     async def steamrecent(self, interaction: discord.Interaction, steamid: str):
-        # Fetches and displays the most recently played games of a player
+        """Fetches and displays the most recently played games of a player."""
         await interaction.response.defer()
         log.info(f"Fetching recent games for: {steamid}")
 
@@ -206,7 +208,7 @@ class Steam(commands.GroupCog, name="steam"):
 
     @app_commands.command(name="gametime", description="Shows the total playtime for a specific game.")
     async def steamgame(self, interaction: discord.Interaction, steamid: str, game_name: str):
-        # Fetches and displays the total playtime for a specific game
+        """Fetches and displays the total playtime for a specific game."""
         await interaction.response.defer()
 
         steamid64 = await self.get_steamid(steamid)
@@ -252,7 +254,7 @@ class Steam(commands.GroupCog, name="steam"):
 
     @app_commands.command(name="common", description="Shows games that all given Steam accounts have in common.")
     async def steamcommon(self, interaction: discord.Interaction, steamids: str):
-        # Fetches and displays games that all given Steam accounts have in common
+        """Fetches and displays games that all given Steam accounts have in common."""
         await interaction.response.defer()
 
         steamid_list = steamids.split()
@@ -287,7 +289,7 @@ class Steam(commands.GroupCog, name="steam"):
         await interaction.followup.send(embed=embed)
 
 async def setup(bot):
-    # Setup function to add the Steam cog to the bot
+    """Sets up the Steam cog."""
     try:
         # Attempt to add the Steam cog to the bot
         await bot.add_cog(Steam(bot))
